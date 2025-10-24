@@ -327,7 +327,7 @@ Just pass the natural language question - Vanna AI handles the rest!"""
             logger.info(f"✅ SQL passed safety checks, executing...")
 
             # Step 4: Execute the SQL query
-            result = await self.db_client.execute_raw_sql(sql, [], "vanna_generated", question)
+            result = await self.db_client.execute_raw_sql(sql, [], "dynamic_sql", question)
 
             logger.info(f"📊 Query returned {len(result) if result else 0} rows")
 
