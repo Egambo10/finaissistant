@@ -380,7 +380,28 @@ Just pass the natural language question - Vanna AI handles the rest!"""
 
                 return response
 
-        # Budget vs spending (has budget, spent, remaining fields)
+        # Simple budget vs spending totals (CTE with budget_total and spending_total)
+        if result and len(result) == 1 and 'budget_total' in result[0] and 'spending_total' in result[0]:
+            budget_total = float(result[0].get('budget_total', 0))
+            spending_total = float(result[0].get('spending_total', 0))
+            remaining = budget_total - spending_total
+            percent = (spending_total / budget_total * 100) if budget_total > 0 else 0
+
+            response = f"💰 **Budget vs Spending Analysis**\n\n"
+            response += f"📊 **Total Budget**: ${budget_total:,.2f} MXN\n"
+            response += f"💳 **Total Spent**: ${spending_total:,.2f} MXN ({percent:.1f}%)\n"
+            response += f"💵 **Remaining**: ${remaining:,.2f} MXN\n\n"
+
+            if percent > 100:
+                response += f"🚨 **You're over budget by ${abs(remaining):,.2f} MXN!**"
+            elif percent > 80:
+                response += f"⚠️ **Warning**: You've used {percent:.1f}% of your budget."
+            else:
+                response += f"✅ **Good job!** You're at {percent:.1f}% of your budget."
+
+            return response
+
+        # Budget vs spending (has budget, spent, remaining fields - detailed by category)
         if result and 'budget' in result[0] and 'spent' in result[0]:
             total_budget = sum(float(r.get('budget', 0)) for r in result)
             total_spent = sum(float(r.get('spent', 0)) for r in result)
