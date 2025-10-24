@@ -319,9 +319,9 @@ Just pass the natural language question - Vanna AI handles the rest!"""
                     logger.error(f"🚨 SQL rejected by pattern '{pattern}': {sql}")
                     raise Exception(f"Generated SQL rejected by security guardrails")
 
-            # Ensure it's a SELECT statement
-            if not re.match(r'^\s*select', sql, re.IGNORECASE):
-                logger.error(f"🚨 SQL rejected - not a SELECT statement: {sql}")
+            # Ensure it's a SELECT statement or CTE (WITH clause)
+            if not re.match(r'^\s*(select|with)\b', sql, re.IGNORECASE):
+                logger.error(f"🚨 SQL rejected - not a SELECT/WITH statement: {sql}")
                 raise Exception("Only SELECT queries are allowed for security")
 
             logger.info(f"✅ SQL passed safety checks, executing...")
