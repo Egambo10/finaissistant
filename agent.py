@@ -355,20 +355,39 @@ Just pass the natural language question - Vanna AI handles the rest!"""
         # Category breakdown (has category + total/amount fields)
         if result and isinstance(result[0], dict):
             first_row = result[0]
-            has_category = 'category' in first_row or 'category_name' in first_row
-            has_amount = 'total' in first_row or 'amount' in first_row or 'spent' in first_row
 
-            if has_category and has_amount:
+            # Find category field (flexible detection)
+            category_key = None
+            for key in ['category', 'category_name', 'name']:
+                if key in first_row:
+                    category_key = key
+                    break
+
+            # Find amount field (flexible detection)
+            amount_key = None
+            for key in ['total', 'amount', 'spent', 'spending_total']:
+                if key in first_row and isinstance(first_row[key], (int, float)):
+                    amount_key = key
+                    break
+
+            if category_key and amount_key:
                 # Category breakdown response
-                category_key = 'category_name' if 'category_name' in first_row else 'category'
-                amount_key = 'total' if 'total' in first_row else ('spent' if 'spent' in first_row else 'amount')
-
                 total_all = sum(float(r.get(amount_key, 0)) for r in result)
+
+                # Skip if total is 0 (no data)
+                if total_all == 0:
+                    return "✨ No expenses found for this period."
+
                 response = f"📊 **Spending Breakdown** (Total: ${total_all:,.2f} MXN)\n\n"
 
                 for i, r in enumerate(result[:15], 1):  # Show top 15
-                    category = r.get(category_key, 'Unknown')
+                    category = r.get(category_key, f'Category {i}')
                     amount = float(r.get(amount_key, 0))
+
+                    # Skip categories with 0 amount
+                    if amount == 0:
+                        continue
+
                     percentage = (amount / total_all * 100) if total_all > 0 else 0
                     count = r.get('count', '')
                     count_str = f" ({count}x)" if count else ""

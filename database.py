@@ -551,13 +551,25 @@ class SupabaseClient:
                 ]
                 
             elif template_name == "dynamic_sql":
-                # Handle dynamic SQL generated queries - TRULY GENERIC APPROACH
-                logger.info(f"Executing dynamic SQL: {sql[:200]}...")
-                
-                # Check if this is a budget query
-                if "FROM budgets" in sql or "FROM budgets b" in sql or "budgets b" in sql:
-                    logger.info("Detected budget query in dynamic SQL")
-                    return await self._execute_budget_query(sql, question)
+                # Execute Vanna AI generated SQL directly using Supabase RPC
+                logger.info(f"Executing Vanna AI SQL via RPC: {sql[:200]}...")
+
+                try:
+                    # Use Supabase RPC function to execute SQL directly in PostgreSQL
+                    result = self.client.rpc('execute_vanna_query', {'query_text': sql}).execute()
+
+                    if result.data:
+                        logger.info(f"✅ Vanna SQL executed successfully: {len(result.data)} rows")
+                        return result.data
+                    else:
+                        logger.warning("Vanna SQL returned no data")
+                        return []
+
+                except Exception as e:
+                    logger.error(f"❌ RPC execution failed: {e}")
+                    logger.info("Falling back to manual SQL parsing...")
+                    # Fallback to old method if RPC doesn't exist yet
+                    pass
                 
                 try:
                     # Parse SQL components using regex
