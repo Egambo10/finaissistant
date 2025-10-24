@@ -755,20 +755,42 @@ Examples:
                 if not result:
                     return "✨ No results found for your query."
                 
-                response = f"📊 **Query Results for: \"{question}\"**\n\n"
+                # Special handling for budget by category queries
+                if result and len(result) > 0 and isinstance(result[0], dict):
+                    first_row = result[0]
+                    has_category = 'category_name' in first_row or 'category' in first_row
+                    has_budget = 'budgeted' in first_row or 'amount' in first_row or 'total' in first_row
+                    
+                    if has_category and has_budget:
+                        # This is a budget by category query
+                        total = sum(float(r.get('budgeted', r.get('amount', r.get('total', 0)))) for r in result)
+                        
+                        response = f"💰 **Budget by Category** (Total: ${total:,.2f} MXN)\n\n"
+                        
+                        for i, r in enumerate(result, 1):
+                            category_name = r.get('category_name', r.get('category', f'Category {i}'))
+                            amount = float(r.get('budgeted', r.get('amount', r.get('total', 0))))
+                            percentage = (amount / total * 100) if total > 0 else 0
+                            
+                            response += f"{i}. **{category_name}**: ${amount:,.2f} MXN ({percentage:.1f}%)\n"
+                        
+                        return response
+                
+                # Default formatting
+                response = f"📊 **Results:**\n\n"
                 
                 # Try to format results smartly based on content
                 if len(result) == 1 and 'total' in str(result[0]).lower():
                     # Single total result
                     total_val = next(iter(result[0].values()))
-                    response += f"💰 **Total: ${float(total_val):.2f} MXN**"
+                    response += f"💰 **Total: ${float(total_val):,.2f} MXN**"
                 else:
                     # Multiple results - create table format
                     for i, row in enumerate(result[:20], 1):  # Limit to 20 rows
                         row_text = ""
                         for key, value in row.items():
                             if isinstance(value, (int, float)) and 'amount' in key.lower():
-                                row_text += f"${float(value):.2f} "
+                                row_text += f"${float(value):,.2f} "
                             else:
                                 row_text += f"{value} "
                         response += f"{i}. {row_text.strip()}\n"
@@ -799,9 +821,9 @@ class FinAIAgent:
         self.classifier = classifier
         self.parser = parser
         
-        # Initialize OpenAI LLM - Using GPT-4.1 for better decision making
+        # Initialize OpenAI LLM - Using GPT-4o for better decision making
         self.llm = ChatOpenAI(
-            model="gpt-4.1",
+            model="gpt-4o",
             temperature=0
         )
         

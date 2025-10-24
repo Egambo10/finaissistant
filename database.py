@@ -753,14 +753,18 @@ class SupabaseClient:
         month_match = re.search(r"month\s*=\s*EXTRACT\(MONTH FROM CURRENT_DATE\)", sql, re.IGNORECASE)
         year_match = re.search(r"year\s*=\s*EXTRACT\(YEAR FROM CURRENT_DATE\)", sql, re.IGNORECASE)
         
-        # Check if query includes category join
-        has_category_join = "JOIN categories" in sql
+        # Check if query needs category names
+        # Include categories if SQL mentions them OR if question asks for category breakdown
+        needs_categories = (
+            "JOIN categories" in sql or 
+            "categories" in sql.lower() or 
+            "category" in sql.lower() or
+            (question and ("categor" in question.lower() or "desglos" in question.lower()))
+        )
         
-        # Build Supabase query
-        if has_category_join:
-            query = self.client.table('budgets').select('amount, categories(name)')
-        else:
-            query = self.client.table('budgets').select('amount')
+        # ALWAYS include categories for budget queries - users almost always want to see category names
+        logger.info(f"Including category names in budget query (needs_categories={needs_categories})")
+        query = self.client.table('budgets').select('*, categories(name)')
         
         # Apply filters
         if month_match:
@@ -779,7 +783,8 @@ class SupabaseClient:
         is_sum = "SUM(" in sql.upper()
         has_group_by = "GROUP BY" in sql.upper()
         
-        if is_sum and has_group_by and has_category_join:
+        # If query asks for budget by category, group results by category name
+        if has_group_by or (question and ("categor" in question.lower() or "desglos" in question.lower())):
             # Group by category
             category_totals = {}
             for budget in result.data:
@@ -790,9 +795,9 @@ class SupabaseClient:
                         category_totals[cat_name] = 0
                     category_totals[cat_name] += amount
             
-            # Return as list of dicts
+            # Return as list of dicts with category names
             results = [
-                {"category": cat_name, "total": total, "total_budget": total}
+                {"category_name": cat_name, "budgeted": total, "amount": total}
                 for cat_name, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
             ]
             logger.info(f"Grouped budget results: {len(results)} categories")
