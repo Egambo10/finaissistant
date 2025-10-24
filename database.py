@@ -765,51 +765,51 @@ class SupabaseClient:
                 query = self.client.table('budgets').select('*, categories(name)')
             else:
                 query = self.client.table('budgets').select('*')
-        
-        # Apply filters
-        if month_match:
-            query = query.eq('month', current_month)
-            logger.info(f"Filtering by month: {current_month}")
-        
-        if year_match:
-            query = query.eq('year', current_year)
-            logger.info(f"Filtering by year: {current_year}")
-        
-        # Execute query
-        result = query.execute()
-        logger.info(f"Budget query returned {len(result.data)} rows")
-        
-        # Process results based on SQL structure
-        # Vanna generates proper SQL, we just need to format the Supabase response
-        
-        if not result.data:
-            return []
-        
-        # Check if this has category information from JOIN
-        if has_category_join and result.data and result.data[0].get('categories'):
-            # Format results to match expected output structure
-            # Vanna generates: SELECT c.name as category_name, b.amount as budgeted
-            formatted_results = []
-            for row in result.data:
-                formatted_row = {
-                    'category_name': row['categories']['name'],
-                    'budgeted': float(row['amount']),
-                    'amount': float(row['amount'])  # Alias for compatibility
-                }
-                formatted_results.append(formatted_row)
             
-            logger.info(f"Formatted {len(formatted_results)} budget rows with categories")
-            return formatted_results
-        
-        # Check if this is a simple aggregation (SUM without GROUP BY)
-        elif "SUM(" in sql.upper() and "GROUP BY" not in sql.upper():
-            total = sum(float(b['amount']) for b in result.data)
-            logger.info(f"Total budget sum: {total}")
-            return [{"total": total}]
-        
-        # Return raw results for other cases
-        return result.data
-        
+            # Apply filters
+            if month_match:
+                query = query.eq('month', current_month)
+                logger.info(f"Filtering by month: {current_month}")
+            
+            if year_match:
+                query = query.eq('year', current_year)
+                logger.info(f"Filtering by year: {current_year}")
+            
+            # Execute query
+            result = query.execute()
+            logger.info(f"Budget query returned {len(result.data)} rows")
+            
+            # Process results based on SQL structure
+            # Vanna generates proper SQL, we just need to format the Supabase response
+            
+            if not result.data:
+                return []
+            
+            # Check if this has category information from JOIN
+            if has_category_join and result.data and result.data[0].get('categories'):
+                # Format results to match expected output structure
+                # Vanna generates: SELECT c.name as category_name, b.amount as budgeted
+                formatted_results = []
+                for row in result.data:
+                    formatted_row = {
+                        'category_name': row['categories']['name'],
+                        'budgeted': float(row['amount']),
+                        'amount': float(row['amount'])  # Alias for compatibility
+                    }
+                    formatted_results.append(formatted_row)
+                
+                logger.info(f"Formatted {len(formatted_results)} budget rows with categories")
+                return formatted_results
+            
+            # Check if this is a simple aggregation (SUM without GROUP BY)
+            elif "SUM(" in sql.upper() and "GROUP BY" not in sql.upper():
+                total = sum(float(b['amount']) for b in result.data)
+                logger.info(f"Total budget sum: {total}")
+                return [{"total": total}]
+            
+            # Return raw results for other cases
+            return result.data
+            
         except Exception as e:
             logger.error(f"Budget query execution error: {e}", exc_info=True)
             return []
