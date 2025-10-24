@@ -36,11 +36,7 @@ class CurrencyConvertInput(BaseModel):
     to_currency: str = Field(description="Target currency")
 
 class SqlQueryInput(BaseModel):
-    question: str = Field(description="Natural language question about expenses, spending, budgets, or analytics. The tool will intelligently route to predefined templates or generate custom SQL as needed.")
-    query_type: Optional[str] = Field(default=None, description="[OPTIONAL] Specific query type if you want to force a particular template. Usually leave this empty to let intelligent routing decide.")
-    custom_sql: Optional[str] = Field(default=None, description="Custom SQL query if query_type is 'custom'")
-    month: Optional[str] = Field(default=None, description="Month name for custom queries (e.g., 'july')")
-    year: Optional[int] = Field(default=None, description="Year for custom queries (e.g., 2025)")
+    question: str = Field(description="Natural language question about expenses, spending, budgets, or analytics. Vanna AI will generate SQL automatically to answer your question.")
 
 class ParseExpenseTool(BaseTool):
     name: str = "parse_expense"
@@ -205,44 +201,42 @@ class CurrencyConvertTool(BaseTool):
         return loop.run_until_complete(self._arun(amount, from_currency, to_currency))
 
 class SqlQueryTool(BaseTool):
-    name: str = "sql_query" 
-    description: str = """Execute predefined SQL queries for expense analytics. Available query types:
+    name: str = "sql_query"
+    description: str = """Answer questions about expenses, spending, budgets, and financial analytics using AI-generated SQL.
 
-TOTALS:
-- 'week_total': Total spending in last 7 days 
-- 'month_total': Total spending this month (current month)
-- 'today_total': Total spending today only
-- 'yesterday_total': Total spending yesterday only
-- 'total_budget': Total budget amount for current month
+This tool uses Vanna AI (RAG-based Text-to-SQL) to understand natural language questions and generate appropriate SQL queries.
 
-CATEGORY BREAKDOWNS:
-- 'month_by_category': This month's spending by category with counts and percentages
-- 'today_by_category': Today's spending by category
-- 'yesterday_by_category': Yesterday's spending by category  
-- 'custom_month_category': Specific month/year spending by category (requires month='july', year=2025)
+CAPABILITIES:
+- Spending totals (day, week, month, year, custom periods)
+- Category breakdowns and comparisons
+- Budget vs actual analysis with progress tracking
+- Transaction history and recent expenses
+- Top N queries (highest/lowest expenses, top categories)
+- Complex filtering (amount ranges, date ranges, specific merchants)
+- Multi-table JOINs (expenses + categories + budgets + users)
+- Aggregations (SUM, AVG, COUNT, MAX, MIN)
+- Time-based analysis (trends, comparisons, growth)
+- Insights and recommendations based on spending patterns
 
-BUDGET ANALYSIS:
-- 'budget_vs_spending': Current month budget vs actual spending with progress %
-- 'custom_month_budget': Historical month budget vs spending (requires month='july', year=2025)
+EXAMPLE QUESTIONS:
+- "How much did I spend this month?"
+- "Show me spending by category for July 2025"
+- "What's my budget vs actual spending?"
+- "List my top 5 highest expenses this year"
+- "Show expenses over $100 in Restaurants category"
+- "Compare my spending this month vs last month"
+- "What percentage of my budget have I used?"
 
-TRANSACTION HISTORY:
-- 'recent_expenses': Last 10 expenses with details, categories, dates, and users
-
-CUSTOM QUERIES:
-- 'dynamic_sql': Auto-generate SQL for complex questions not covered above (requires question parameter)
-- 'custom': Execute provided custom SQL (requires custom_sql parameter)
-
-Use 'dynamic_sql' for questions that don't match predefined templates. The system will generate appropriate SQL automatically."""
+Just pass the natural language question - Vanna AI handles the rest!"""
     args_schema: Type[BaseModel] = SqlQueryInput
     db_client: Any = None
-    templates: Any = None
     vanna_trainer: Any = None
     
     def __init__(self, db_client, **kwargs):
         super().__init__(**kwargs)
         object.__setattr__(self, 'db_client', db_client)
-        
-        # Initialize Vanna AI for improved SQL generation
+
+        # Initialize Vanna AI for all SQL generation
         import logging
         logger = logging.getLogger(__name__)
         try:
@@ -253,195 +247,24 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
             # Train Vanna on database schema and examples
             vanna.train_all()
             object.__setattr__(self, 'vanna_trainer', vanna)
-            logger.info("✅ Vanna AI integrated and trained")
+            logger.info("✅ Vanna AI integrated and trained for all SQL generation")
         except Exception as e:
-            logger.warning(f"⚠️ Vanna initialization failed, falling back to GPT-4: {e}")
-            object.__setattr__(self, 'vanna_trainer', None)
-        
-        # Predefined safe SQL templates (family expense tracking)
-        templates = {
-            "week_total": """
-            SELECT COALESCE(SUM(amount), 0) as total
-            FROM expenses e
-            WHERE e.expense_date >= (CURRENT_DATE - INTERVAL '7 days')
-              AND e.expense_date <= CURRENT_DATE
-            """,
-            
-            "month_total": """
-            SELECT COALESCE(SUM(amount), 0) as total
-            FROM expenses e
-            WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
-            """,
-            
-            "month_by_category": """
-            SELECT c.name as category, SUM(e.amount) as total, COUNT(*) as count
-            FROM expenses e
-            JOIN categories c ON c.id = e.category_id
-            WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
-            GROUP BY c.name, c.id
-            ORDER BY total DESC
-            """,
-            
-            "recent_expenses": """
-            SELECT e.expense_detail, e.amount, c.name as category, e.expense_date, u.name as user_name
-            FROM expenses e
-            JOIN categories c ON c.id = e.category_id
-            JOIN users u ON u.id = e.user_id
-            ORDER BY e.expense_date DESC, e.created_at DESC
-            LIMIT 10
-            """,
-            
-            "today_total": """
-            SELECT COALESCE(SUM(amount), 0) as total
-            FROM expenses e
-            WHERE DATE(e.expense_date) = CURRENT_DATE
-            """,
-            
-            "yesterday_total": """
-            SELECT COALESCE(SUM(amount), 0) as total
-            FROM expenses e
-            WHERE DATE(e.expense_date) = (CURRENT_DATE - INTERVAL '1 day')
-            """,
-            
-            "today_by_category": """
-            SELECT c.name as category, SUM(e.amount) as total, COUNT(*) as count
-            FROM expenses e
-            JOIN categories c ON c.id = e.category_id
-            WHERE DATE(e.expense_date) = CURRENT_DATE
-            GROUP BY c.name, c.id
-            ORDER BY total DESC
-            """,
-            
-            "yesterday_by_category": """
-            SELECT c.name as category, SUM(e.amount) as total, COUNT(*) as count
-            FROM expenses e
-            JOIN categories c ON c.id = e.category_id
-            WHERE DATE(e.expense_date) = (CURRENT_DATE - INTERVAL '1 day')
-            GROUP BY c.name, c.id
-            ORDER BY total DESC
-            """,
-            
-            "total_budget": """
-            SELECT COALESCE(SUM(b.amount), 0) as total
-            FROM budgets b
-            WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
-              AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
-            """,
-            
-            "budget_vs_spending": """
-            WITH static_budgets AS (
-                SELECT b.category_id, c.name as category_name, b.amount as budget_amount
-                FROM budgets b
-                JOIN categories c ON c.id = b.category_id
-                WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
-                  AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
-            ),
-            current_month_spending AS (
-                SELECT e.category_id, SUM(e.amount) as spent_amount
-                FROM expenses e
-                WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
-                GROUP BY e.category_id
-            )
-            SELECT 
-                sb.category_name,
-                COALESCE(sb.budget_amount, 0) as budget,
-                COALESCE(cms.spent_amount, 0) as spent,
-                COALESCE(sb.budget_amount, 0) - COALESCE(cms.spent_amount, 0) as remaining,
-                CASE 
-                    WHEN sb.budget_amount > 0 
-                    THEN ROUND((COALESCE(cms.spent_amount, 0) / sb.budget_amount * 100), 1) 
-                    ELSE 0 
-                END as percent_used
-            FROM static_budgets sb
-            LEFT JOIN current_month_spending cms ON sb.category_id = cms.category_id
-            ORDER BY percent_used DESC
-            """
-        }
-        object.__setattr__(self, 'templates', templates)
+            logger.error(f"❌ Vanna initialization failed: {e}")
+            raise Exception("Vanna AI is required for SQL generation")
     
     async def _generate_sql(self, question: str) -> str:
         """
-        Generate SQL query using Vanna AI (RAG-based) or fallback to GPT-4
+        Generate SQL query using Vanna AI (RAG-based Text-to-SQL)
         Vanna provides better accuracy through database-specific training
         """
         import logging
         logger = logging.getLogger(__name__)
-        
-        # Try Vanna first (preferred method)
-        if self.vanna_trainer:
-            try:
-                logger.info(f"🤖 Using Vanna AI for SQL generation: {question}")
-                sql = self.vanna_trainer.generate_sql(question)
-                
-                # Clean up the SQL
-                sql = sql.strip()
-                if sql.startswith('```sql'):
-                    sql = sql[6:]
-                elif sql.startswith('```'):
-                    sql = sql[3:]
-                if sql.endswith('```'):
-                    sql = sql[:-3]
-                sql = sql.rstrip(';').strip()
-                
-                return sql
-            except Exception as e:
-                logger.warning(f"⚠️ Vanna generation failed, falling back to GPT-4: {e}")
-        
-        # Fallback to direct GPT-4 prompting
-        logger.info("🔄 Falling back to direct GPT-4 SQL generation")
-        from openai import AsyncOpenAI
-        
-        client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        
-        schema_info = """
-        Database Schema:
-        - expenses(id, user_id, category_id, expense_detail, amount, currency, expense_date, paid_by, timestamp)
-          * paid_by is TEXT field containing user name, NOT a foreign key  
-        - categories(id, name, description)
-        - budgets(id, category_id, amount, currency, month, year) - month is INTEGER 1-12, year is INTEGER (e.g., 2025)
-        - users(id, name, telegram_id)
-        - currency_rates(base_currency, target_currency, rate)
-        
-        Relations:
-        - expenses.category_id → categories.id
-        - expenses.user_id → users.id  
-        - budgets.category_id → categories.id
-        - expenses.paid_by is TEXT (user name), use as-is or LEFT JOIN users ON expenses.paid_by = users.name
-        
-        Important:
-        - When querying budgets, ALWAYS filter by both month AND year
-        - Use: WHERE month = EXTRACT(MONTH FROM CURRENT_DATE) AND year = EXTRACT(YEAR FROM CURRENT_DATE)
-        """
-        
-        prompt = f"""Generate a safe PostgreSQL SELECT query for this question: "{question}"
 
-{schema_info}
+        logger.info(f"🤖 Generating SQL with Vanna AI: {question}")
+        sql = self.vanna_trainer.generate_sql(question)
 
-Requirements:
-- Only SELECT statements allowed
-- Use proper JOINs for relations
-- Include currency formatting (assume MXN)  
-- Use proper date filtering with PostgreSQL functions
-- Family expense tracking - query all expenses, not user-specific
-- Return meaningful column names
-- Limit results to reasonable amounts (max 100 rows)
-- Return ONLY the SQL query, no code blocks, no semicolons, no explanation
-
-Question: {question}
-
-SQL Query:"""
-
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=300
-        )
-        
-        raw_sql = response.choices[0].message.content.strip()
-        
         # Clean up the SQL
-        sql = raw_sql
+        sql = sql.strip()
         if sql.startswith('```sql'):
             sql = sql[6:]
         elif sql.startswith('```'):
@@ -449,371 +272,192 @@ SQL Query:"""
         if sql.endswith('```'):
             sql = sql[:-3]
         sql = sql.rstrip(';').strip()
-        
+
+        logger.info(f"✅ Vanna generated SQL: {sql[:100]}...")
         return sql
 
-    async def _consult_sql_library(self, question: str) -> Dict[str, Any]:
-        """Consult the SQL Library Agent to find matching templates"""
-        from openai import AsyncOpenAI
-        import os
-        
-        client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        
-        # Build comprehensive template descriptions
-        template_descriptions = []
-        for template_name, sql in self.templates.items():
-            if template_name == "week_total":
-                template_descriptions.append("week_total: Total spending in last 7 days")
-            elif template_name == "month_total": 
-                template_descriptions.append("month_total: Total spending in current month")
-            elif template_name == "today_total":
-                template_descriptions.append("today_total: Total spending today")
-            elif template_name == "yesterday_total":
-                template_descriptions.append("yesterday_total: Total spending yesterday")
-            elif template_name == "total_budget":
-                template_descriptions.append("total_budget: Total budget amount for current month")
-            elif template_name == "month_by_category":
-                template_descriptions.append("month_by_category: Spending breakdown by category for current month")
-            elif template_name == "today_by_category":
-                template_descriptions.append("today_by_category: Today's spending by category")
-            elif template_name == "yesterday_by_category":
-                template_descriptions.append("yesterday_by_category: Yesterday's spending by category")
-            elif template_name == "budget_vs_spending":
-                template_descriptions.append("budget_vs_spending: Compare budget vs actual spending for current month")
-            elif template_name == "recent_expenses":
-                template_descriptions.append("recent_expenses: List recent expenses (individual records)")
-            elif template_name == "top_categories_period":
-                template_descriptions.append("top_categories_period: Top spending categories for a date range")
-        
-        templates_list = "\n".join(template_descriptions)
-        
-        consultant_prompt = f"""You are the SQL Library Consultant. Your job is to determine if a user question can be answered with existing SQL templates.
-
-Available SQL Templates:
-{templates_list}
-
-User Question: "{question}"
-
-Analyze the question and determine:
-1. Can this be answered with one of the existing templates?
-2. If YES, which template should be used?
-3. If NO, explain why it needs custom SQL generation
-
-Respond in JSON format:
-{{
-  "has_template": true/false,
-  "template_name": "template_name" or null,
-  "reasoning": "explanation of your decision"
-}}
-
-Examples:
-- "how much did I spend this week" → {{"has_template": true, "template_name": "week_total", "reasoning": "Direct match for weekly spending total"}}
-- "top 5 expenses this year" → {{"has_template": false, "template_name": null, "reasoning": "Requires custom SQL for top N with yearly filter and individual records"}}
-"""
-
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": consultant_prompt}],
-            temperature=0.1,
-            max_tokens=200
-        )
-        
-        try:
-            import json
-            result = json.loads(response.choices[0].message.content.strip())
-            return result
-        except:
-            # Fallback if JSON parsing fails
-            return {"has_template": False, "template_name": None, "reasoning": "JSON parsing failed"}
-    
-    async def _arun(self, question: str, query_type: Optional[str] = None, custom_sql: Optional[str] = None, month: Optional[str] = None, year: Optional[int] = None) -> str:
+    async def _arun(self, question: str) -> str:
+        """
+        Generate and execute SQL query using Vanna AI for any natural language question
+        """
         import logging
+        import re
         logger = logging.getLogger(__name__)
-        
+
         try:
-            logger.info(f"SqlQueryTool._arun called with: query_type={query_type}, question={question}")
-            
-            # NEW: Multi-agent consultation system
-            if question and not query_type:
-                # Step 1: Consult SQL Library Agent
-                logger.info(f"Consulting SQL Library Agent for question: {question}")
-                consultation = await self._consult_sql_library(question)
-                
-                logger.info(f"SQL Library consultation result: {consultation}")
-                
-                if consultation.get("has_template"):
-                    # Use the recommended template
-                    query_type = consultation["template_name"]
-                    logger.info(f"SQL Library Agent recommends template: {query_type}")
-                else:
-                    # No template found, use dynamic SQL
-                    query_type = "dynamic_sql"
-                    logger.info(f"No template found, using dynamic SQL. Reason: {consultation.get('reasoning')}")
-            
-            if query_type == 'dynamic_sql' and question:
-                logger.info(f"Generating dynamic SQL for question: {question}")
-                # Generate SQL automatically for questions not covered by predefined templates
-                sql = await self._generate_sql(question)
-                logger.info(f"Generated SQL: {sql}")
-                
-                # Apply safety checks to generated SQL
-                if not sql.strip():
-                    logger.error("Empty SQL generated")
-                    raise Exception("Failed to generate SQL")
-                
-                # More precise safety checks - block SQL injection patterns but allow legitimate SQL
-                dangerous_patterns = [
-                    r';\s*\w',  # Multiple statements (semicolon followed by more SQL)
-                    r'--\s',  # SQL comments with space after
-                    r'/\*.*\*/',  # Block comments
-                    r'\bdrop\b',  # DROP statements
-                    r'\bdelete\b',  # DELETE statements
-                    r'\bupdate\b',  # UPDATE statements
-                    r'\binsert\b',  # INSERT statements
-                    r'\balter\b',  # ALTER statements
-                    r'\bcreate\b',  # CREATE statements
-                ]
-                
-                # Check each pattern individually for better debugging
-                for pattern in dangerous_patterns:
-                    if re.search(pattern, sql, re.IGNORECASE):
-                        logger.error(f"SQL rejected by pattern '{pattern}': {sql}")
-                        raise Exception(f"Generated SQL rejected by guardrails: pattern '{pattern}' matched")
-                
-                if not re.match(r'^\s*select', sql, re.IGNORECASE):
-                    logger.error(f"SQL rejected - not a SELECT statement: {sql}")
-                    raise Exception("Generated SQL rejected by guardrails: not a SELECT statement")
-                
-                logger.info(f"SQL passed safety checks, executing...")
-                result = await self.db_client.execute_raw_sql(sql, [], "dynamic_sql", question)
-            elif query_type == 'custom' and custom_sql:
-                # Safety checks for custom SQL
-                if not custom_sql.strip():
-                    raise Exception("Empty query")
-                # Apply same safety checks as dynamic SQL
-                dangerous_patterns = [
-                    r';',  # Multiple statements
-                    r'--\s',  # SQL comments with space after
-                    r'/\*.*\*/',  # Block comments
-                    r'\bdrop\b',  # DROP statements
-                    r'\bdelete\b',  # DELETE statements
-                    r'\bupdate\b',  # UPDATE statements
-                    r'\binsert\b',  # INSERT statements
-                    r'\balter\b',  # ALTER statements
-                    r'\bcreate\b',  # CREATE statements
-                ]
-                if any(re.search(pattern, custom_sql, re.IGNORECASE) for pattern in dangerous_patterns) or not re.match(r'^\s*select', custom_sql, re.IGNORECASE):
-                    raise Exception("Query rejected by guardrails")
-                sql = custom_sql
-            elif query_type == 'custom_month_category':
-                # Handle specific month/year category breakdown
-                if not month or not year:
-                    raise Exception("Month and year required for custom_month_category")
-                
-                # Pass month/year info to database via template name
-                template_name = f"custom_month_category_{month.lower()}_{year}"
-                sql = "-- Custom month category query"
-                result = await self.db_client.execute_raw_sql(sql, [month.lower(), year], template_name, None)
-            elif query_type == 'custom_month_budget':
-                # Handle specific month/year budget vs spending analysis
-                if not month or not year:
-                    raise Exception("Month and year required for custom_month_budget")
-                
-                # Pass month/year info to database via template name
-                template_name = f"custom_month_budget_{month.lower()}_{year}"
-                sql = "-- Custom month budget query"
-                result = await self.db_client.execute_raw_sql(sql, [month.lower(), year], template_name, None)
-            elif query_type in self.templates:
-                sql = self.templates[query_type]
-                result = await self.db_client.execute_raw_sql(sql, [], query_type, None)
-            else:
-                raise Exception(f"Unknown query type: {query_type}")
-            
-            # Debug: log the SQL being executed (for non-custom queries)
-            if query_type not in ['custom_month_category', 'custom_month_budget', 'dynamic_sql']:
-                print(f"DEBUG: Executing SQL for {query_type}:")
-                print(f"SQL: {sql}")
-            elif query_type == 'dynamic_sql':
-                print(f"DEBUG: Generated SQL for question '{question}':")
-                print(f"SQL: {sql}")
-            print(f"DEBUG: Query result: {result}")
-            print(f"DEBUG: Result type: {type(result)}, Length: {len(result) if result else 'None'}")
-            
-            # Format results nicely
-            if query_type in ['week_total', 'month_total', 'today_total', 'yesterday_total', 'total_budget']:
-                total = result[0].get('total', 0) if result else 0
-                
-                if query_type == 'total_budget':
-                    return f"💰 Total budget for this month: ${total:.2f} MXN"
-                
-                period_map = {
-                    'week_total': 'this week',
-                    'month_total': 'this month', 
-                    'today_total': 'today',
-                    'yesterday_total': 'yesterday'
-                }
-                period = period_map.get(query_type, 'this period')
-                return f"💰 Total spending {period}: ${total:.2f} MXN"
-            
-            elif query_type in ['month_by_category', 'custom_month_category', 'today_by_category', 'yesterday_by_category']:
-                # Determine period label
-                period_labels = {
-                    'month_by_category': 'This Month',
-                    'today_by_category': 'Today',
-                    'yesterday_by_category': 'Yesterday'
-                }
-                
-                if query_type == 'custom_month_category':
-                    period_label = f"{month.title()} {year}" if month and year else "Period"
-                    period_text = f"{month.title()} {year}".lower() if month and year else "that period"
-                else:
-                    period_label = period_labels.get(query_type, "Period")
-                    period_text = period_label.lower()
-                
-                if not result:
-                    return f"✨ No expenses found for {period_text}."
-                
-                response = f"📊 {period_label}'s Spending by Category:\n\n"
-                total_all = sum(float(r.get('total', 0)) for r in result)
-                response += f"💵 Grand Total: ${total_all:.2f} MXN\n\n"
-                
-                for i, r in enumerate(result, 1):  # Show ALL categories, not just top 5
-                    name = r.get('category', 'Unknown')
-                    amount = float(r.get('total', 0))
-                    count = int(r.get('count', 0))
-                    percentage = (amount / total_all * 100) if total_all > 0 else 0
-                    response += f"{i}. {name}: ${amount:.2f} ({percentage:.1f}%) - {count}x\n"
-                
-                return response
-            
-            elif query_type in ['budget_vs_spending', 'custom_month_budget']:
-                if not result:
-                    return "📊 **Budget Analysis**\n\n✨ No budget data found. Set up budgets to track your spending progress!"
-                
-                # Calculate totals
-                total_budget = sum(float(r.get('budget', 0)) for r in result)
-                total_spent = sum(float(r.get('spent', 0)) for r in result)
-                total_remaining = total_budget - total_spent
-                overall_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
-                
-                # Conversational response as requested
-                period_text = f"{month.title()} {year}" if query_type == 'custom_month_budget' and month and year else "this month"
-                response = f"💰 **Here's how you're doing against your budget for {period_text}:**\n\n"
-                response += f"You spent **${total_spent:.2f} MXN** in {period_text}, "
-                
-                if overall_percent > 100:
-                    response += f"which is **{overall_percent:.1f}%** of your budget. 🚨\n"
-                    response += f"⚠️ You're **${abs(total_remaining):.2f} MXN over budget!**\n\n"
-                elif overall_percent > 80:
-                    response += f"which is **{overall_percent:.1f}%** of your budget. ⚠️\n"
-                    response += f"💡 You have **${total_remaining:.2f} MXN** left - watch your spending!\n\n"
-                else:
-                    response += f"which is **{overall_percent:.1f}%** of your budget. ✅\n"
-                    response += f"🎉 You have **${total_remaining:.2f} MXN** remaining. You're on track!\n\n"
-                
-                response += f"📊 **Budget: ${total_budget:.2f} MXN** | **Spent: ${total_spent:.2f} MXN** | **Progress: {overall_percent:.1f}%**\n\n"
-                
-                # Category breakdown
-                response += "📋 **By Category:**\n\n"
-                for i, r in enumerate(result[:8], 1):  # Show top 8 categories
-                    category = r.get('category_name', 'Unknown')
-                    budget = float(r.get('budget', 0))
-                    spent = float(r.get('spent', 0))
-                    remaining = float(r.get('remaining', 0))
-                    percent = float(r.get('percent_used', 0))
-                    
-                    status_emoji = "🚨" if percent > 100 else "⚠️" if percent > 80 else "✅"
-                    
-                    response += f"{status_emoji} **{category}**: ${spent:.2f} / ${budget:.2f} ({percent:.1f}%)\n"
-                    if remaining > 0:
-                        response += f"   💰 ${remaining:.2f} remaining\n"
-                    elif remaining < 0:
-                        response += f"   🚨 ${abs(remaining):.2f} over budget\n"
-                    response += "\n"
-                
-                return response
-            
-            elif query_type == 'recent_expenses':
-                if not result:
-                    return "✨ No recent expenses found."
-                
-                response = "📝 Recent Expenses:\n\n"
-                for i, r in enumerate(result, 1):
-                    detail = r.get('expense_detail', 'Unknown')
-                    amount = float(r.get('amount', 0))
-                    category = r.get('category', 'Unknown')
-                    date = r.get('expense_date', 'Unknown')
-                    user_name = r.get('user_name', 'Unknown')
-                    response += f"{i}. {detail} - ${amount:.2f}\n   🏷️ {category} • 📅 {date} • 👤 {user_name}\n\n"
-                
-                total_shown = sum(float(r.get('amount', 0)) for r in result)
-                response += f"💰 Total shown: ${total_shown:.2f} MXN"
-                return response
-            
-            elif query_type == 'dynamic_sql':
-                # Format dynamic SQL results intelligently
-                if not result:
-                    return "✨ No results found for your query."
-                
-                # Special handling for budget by category queries
-                if result and len(result) > 0 and isinstance(result[0], dict):
-                    first_row = result[0]
-                    has_category = 'category_name' in first_row or 'category' in first_row
-                    has_budget = 'budgeted' in first_row or 'amount' in first_row or 'total' in first_row
-                    
-                    if has_category and has_budget:
-                        # This is a budget by category query
-                        total = sum(float(r.get('budgeted', r.get('amount', r.get('total', 0)))) for r in result)
-                        
-                        response = f"💰 **Budget by Category** (Total: ${total:,.2f} MXN)\n\n"
-                        
-                        for i, r in enumerate(result, 1):
-                            category_name = r.get('category_name', r.get('category', f'Category {i}'))
-                            amount = float(r.get('budgeted', r.get('amount', r.get('total', 0))))
-                            percentage = (amount / total * 100) if total > 0 else 0
-                            
-                            response += f"{i}. **{category_name}**: ${amount:,.2f} MXN ({percentage:.1f}%)\n"
-                        
-                        return response
-                
-                # Default formatting
-                response = f"📊 **Results:**\n\n"
-                
-                # Try to format results smartly based on content
-                if len(result) == 1 and 'total' in str(result[0]).lower():
-                    # Single total result
-                    total_val = next(iter(result[0].values()))
-                    response += f"💰 **Total: ${float(total_val):,.2f} MXN**"
-                else:
-                    # Multiple results - create table format
-                    for i, row in enumerate(result[:20], 1):  # Limit to 20 rows
-                        row_text = ""
-                        for key, value in row.items():
-                            if isinstance(value, (int, float)) and 'amount' in key.lower():
-                                row_text += f"${float(value):,.2f} "
-                            else:
-                                row_text += f"{value} "
-                        response += f"{i}. {row_text.strip()}\n"
-                    
-                    if len(result) > 20:
-                        response += f"\n... and {len(result) - 20} more rows"
-                
-                return response
-            
-            else:
-                return json.dumps(result)
-                
+            logger.info(f"🤖 SqlQueryTool processing question: {question}")
+
+            # Step 1: Validate input
+            if not question or not question.strip():
+                raise Exception("Question cannot be empty")
+
+            # Step 2: Generate SQL using Vanna AI
+            sql = await self._generate_sql(question)
+
+            # Step 3: Apply safety checks to generated SQL
+            if not sql.strip():
+                logger.error("Empty SQL generated by Vanna")
+                raise Exception("Failed to generate SQL")
+
+            # Block dangerous SQL patterns (SQL injection protection)
+            dangerous_patterns = [
+                r';\s*\w',  # Multiple statements (semicolon followed by more SQL)
+                r'--\s',  # SQL comments with space after
+                r'/\*.*\*/',  # Block comments
+                r'\bdrop\b',  # DROP statements
+                r'\bdelete\b',  # DELETE statements
+                r'\bupdate\b',  # UPDATE statements
+                r'\binsert\b',  # INSERT statements
+                r'\balter\b',  # ALTER statements
+                r'\bcreate\b',  # CREATE statements
+                r'\btruncate\b',  # TRUNCATE statements
+            ]
+
+            # Check each pattern individually for better debugging
+            for pattern in dangerous_patterns:
+                if re.search(pattern, sql, re.IGNORECASE):
+                    logger.error(f"🚨 SQL rejected by pattern '{pattern}': {sql}")
+                    raise Exception(f"Generated SQL rejected by security guardrails")
+
+            # Ensure it's a SELECT statement
+            if not re.match(r'^\s*select', sql, re.IGNORECASE):
+                logger.error(f"🚨 SQL rejected - not a SELECT statement: {sql}")
+                raise Exception("Only SELECT queries are allowed for security")
+
+            logger.info(f"✅ SQL passed safety checks, executing...")
+
+            # Step 4: Execute the SQL query
+            result = await self.db_client.execute_raw_sql(sql, [], "vanna_generated", question)
+
+            logger.info(f"📊 Query returned {len(result) if result else 0} rows")
+
+            # Step 5: Format results intelligently
+            return self._format_results(result, question, sql)
+
         except Exception as e:
-            return f"❌ Query error: {str(e)}"
-    
-    def _run(self, question: str, query_type: Optional[str] = None, custom_sql: Optional[str] = None, month: Optional[str] = None, year: Optional[int] = None) -> str:
+            logger.error(f"❌ Query error: {str(e)}")
+            return f"❌ I couldn't answer that question: {str(e)}"
+
+    def _format_results(self, result: list, question: str, sql: str) -> str:
+        """
+        Intelligently format query results based on content and structure
+        """
+        import json
+
+        if not result:
+            return "✨ No results found for your question."
+
+        # Single row with a 'total' field → format as total
+        if len(result) == 1 and 'total' in result[0]:
+            total = float(result[0]['total'])
+            return f"💰 **Total: ${total:,.2f} MXN**"
+
+        # Category breakdown (has category + total/amount fields)
+        if result and isinstance(result[0], dict):
+            first_row = result[0]
+            has_category = 'category' in first_row or 'category_name' in first_row
+            has_amount = 'total' in first_row or 'amount' in first_row or 'spent' in first_row
+
+            if has_category and has_amount:
+                # Category breakdown response
+                category_key = 'category_name' if 'category_name' in first_row else 'category'
+                amount_key = 'total' if 'total' in first_row else ('spent' if 'spent' in first_row else 'amount')
+
+                total_all = sum(float(r.get(amount_key, 0)) for r in result)
+                response = f"📊 **Spending Breakdown** (Total: ${total_all:,.2f} MXN)\n\n"
+
+                for i, r in enumerate(result[:15], 1):  # Show top 15
+                    category = r.get(category_key, 'Unknown')
+                    amount = float(r.get(amount_key, 0))
+                    percentage = (amount / total_all * 100) if total_all > 0 else 0
+                    count = r.get('count', '')
+                    count_str = f" ({count}x)" if count else ""
+
+                    response += f"{i}. **{category}**: ${amount:,.2f} MXN ({percentage:.1f}%){count_str}\n"
+
+                if len(result) > 15:
+                    response += f"\n_... and {len(result) - 15} more categories_"
+
+                return response
+
+        # Budget vs spending (has budget, spent, remaining fields)
+        if result and 'budget' in result[0] and 'spent' in result[0]:
+            total_budget = sum(float(r.get('budget', 0)) for r in result)
+            total_spent = sum(float(r.get('spent', 0)) for r in result)
+            total_remaining = total_budget - total_spent
+            overall_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
+
+            response = f"💰 **Budget Analysis**\n\n"
+            response += f"📊 **Total Budget**: ${total_budget:,.2f} MXN\n"
+            response += f"💳 **Total Spent**: ${total_spent:,.2f} MXN ({overall_percent:.1f}%)\n"
+            response += f"💵 **Remaining**: ${total_remaining:,.2f} MXN\n\n"
+
+            response += "📋 **By Category:**\n\n"
+            for i, r in enumerate(result[:10], 1):
+                category = r.get('category_name', r.get('category', 'Unknown'))
+                budget = float(r.get('budget', 0))
+                spent = float(r.get('spent', 0))
+                percent = float(r.get('percent_used', (spent / budget * 100) if budget > 0 else 0))
+
+                status_emoji = "🚨" if percent > 100 else "⚠️" if percent > 80 else "✅"
+                response += f"{status_emoji} **{category}**: ${spent:,.2f} / ${budget:,.2f} ({percent:.1f}%)\n"
+
+            return response
+
+        # Individual expense records (has expense_detail or merchant)
+        if result and ('expense_detail' in result[0] or 'merchant' in result[0]):
+            response = f"📝 **Expense List** ({len(result)} transactions)\n\n"
+
+            for i, r in enumerate(result[:20], 1):
+                detail = r.get('expense_detail', r.get('merchant', 'Unknown'))
+                amount = float(r.get('amount', 0))
+                category = r.get('category', r.get('category_name', ''))
+                date = r.get('expense_date', '')
+
+                response += f"{i}. **{detail}** - ${amount:,.2f} MXN\n"
+                if category or date:
+                    extras = []
+                    if category:
+                        extras.append(f"🏷️ {category}")
+                    if date:
+                        extras.append(f"📅 {date}")
+                    response += f"   {' • '.join(extras)}\n"
+                response += "\n"
+
+            if len(result) > 20:
+                response += f"_... and {len(result) - 20} more transactions_\n"
+
+            total_shown = sum(float(r.get('amount', 0)) for r in result[:20])
+            response += f"\n💰 **Total shown**: ${total_shown:,.2f} MXN"
+
+            return response
+
+        # Default: Generic table formatting
+        response = f"📊 **Query Results** ({len(result)} rows)\n\n"
+
+        for i, row in enumerate(result[:20], 1):
+            row_text = []
+            for key, value in row.items():
+                if isinstance(value, (int, float)) and ('amount' in key.lower() or 'total' in key.lower() or 'budget' in key.lower()):
+                    row_text.append(f"{key}: ${float(value):,.2f}")
+                elif value is not None:
+                    row_text.append(f"{key}: {value}")
+
+            response += f"{i}. {', '.join(row_text)}\n"
+
+        if len(result) > 20:
+            response += f"\n_... and {len(result) - 20} more rows_"
+
+        return response
+
+    def _run(self, question: str) -> str:
         import asyncio
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._arun(question, query_type, custom_sql, month, year))
+        return loop.run_until_complete(self._arun(question))
 
 class FinAIAgent:
     def __init__(self, db_client, classifier, parser):
@@ -886,35 +530,33 @@ class FinAIAgent:
 **Output**: JSON with converted amount and rate used
 
 ## 🔧 TOOL 5: sql_query (MOST IMPORTANT - READ CAREFULLY)
-**Purpose**: Execute sophisticated expense analytics queries
-**This tool has TWO modes**: Predefined Templates + Dynamic SQL Generation
+**Purpose**: Answer ANY question about expenses using AI-generated SQL
+**Powered by**: Vanna AI (RAG-based Text-to-SQL with database training)
 
-### PREDEFINED QUERY TYPES (try these first):
+**CAPABILITIES** (Vanna AI understands all of these naturally):
+- 💰 Spending totals (day, week, month, year, custom periods)
+- 📊 Category breakdowns and comparisons
+- 💳 Budget vs actual analysis with progress tracking
+- 📝 Transaction history and recent expenses
+- 🏆 Top N queries (highest/lowest expenses, top categories)
+- 🔍 Complex filtering (amount ranges, date ranges, specific merchants/categories)
+- 🔗 Multi-table JOINs (expenses + categories + budgets + users)
+- 📈 Aggregations (SUM, AVG, COUNT, MAX, MIN, percentages)
+- ⏰ Time-based analysis (trends, comparisons, month-over-month)
+- 🧠 Insights and recommendations based on patterns
 
-**SPENDING TOTALS:**
-- query_type='week_total' → Total spending last 7 days
-- query_type='month_total' → Total spending current month  
-- query_type='today_total' → Total spending today
-- query_type='yesterday_total' → Total spending yesterday
-- query_type='total_budget' → Total budget amount for current month
+**HOW TO USE**:
+- Simply call `sql_query(question="user's natural language question")`
+- That's it! Vanna AI handles everything: SQL generation, execution, formatting
 
-**CATEGORY BREAKDOWNS:**
-- query_type='month_by_category' → Current month spending by category with percentages
-- query_type='today_by_category' → Today's spending by category
-- query_type='yesterday_by_category' → Yesterday's spending by category
-- query_type='custom_month_category', month='july', year=2025 → Specific month breakdown
-
-**BUDGET ANALYSIS:**
-- query_type='budget_vs_spending' → Current month budget vs actual with progress %
-- query_type='custom_month_budget', month='july', year=2025 → Historical budget analysis
-
-**TRANSACTION HISTORY:**
-- query_type='recent_expenses' → Last 10 detailed transactions with users and dates
-
-**DYNAMIC SQL (use when no predefined template fits):**
-- query_type='dynamic_sql', question='user question' → Auto-generates SQL for complex queries
-- Use for: individual expense lists, detailed transactions, specific filtering, multi-condition queries
-- Examples: "list each expense", "show individual transactions", "expenses over $X", "details for specific merchant"
+**EXAMPLES**:
+- "How much did I spend this month?" → Vanna generates SELECT SUM query
+- "Show spending by category for July 2025" → Vanna generates JOIN + GROUP BY + date filter
+- "What's my budget vs actual?" → Vanna generates CTE with budgets and expenses
+- "List my top 5 highest expenses" → Vanna generates ORDER BY + LIMIT
+- "Expenses over $100 in Restaurants" → Vanna generates WHERE clauses with JOIN
+- "Compare this month vs last month" → Vanna generates date comparisons
+- "What percentage of budget have I used?" → Vanna generates calculations
 
 # INTELLIGENT DECISION MAKING PROCESS
 
@@ -928,36 +570,34 @@ class FinAIAgent:
 - Any text with merchant + amount pattern
 - NOT questions about spending (those are analytics)
 
-**Analytics/Questions** → Use sql_query with intelligent routing
+**Analytics/Questions** → Use sql_query with Vanna AI
 - Questions about spending, budgets, categories, totals, breakdowns
 - "show me", "how much", "what did I spend", "budget vs actual"
+- "compare", "analyze", "breakdown", "list expenses"
 
-## STEP 2: INTELLIGENT ANALYTICS ROUTING
-**NEW: The sql_query tool now has built-in multi-agent intelligence!**
+## STEP 2: USING SQL_QUERY TOOL
+**SIMPLE & POWERFUL**: Just pass the user's question to Vanna AI
 
-**SIMPLE APPROACH**: Just call sql_query with question parameter only:
-- sql_query(question="user's question here")
+```
+sql_query(question="<exactly what the user asked>")
+```
 
-**The tool will automatically:**
-1. **Consult SQL Library Agent** → "Can existing templates handle this question?"
-2. **If YES** → Uses appropriate template (week_total, month_by_category, etc.)  
-3. **If NO** → **Dynamic SQL Writer Agent** generates custom SQL
-4. **Execute** → Returns properly formatted results
+**Vanna AI automatically**:
+1. 🧠 Understands the question using RAG (trained on your database schema)
+2. 🔧 Generates optimized PostgreSQL SELECT query with proper JOINs
+3. ✅ Query is validated for security (only SELECT allowed)
+4. 📊 Executes and formats results beautifully
+5. 💬 Returns conversational response with emojis and formatting
 
-**Examples (all use same approach):**
-   - "spending this week" → sql_query(question="spending this week")
-   - "top 5 expenses this year" → sql_query(question="top 5 expenses this year") 
-   - "list each expense under Subscriptions in july 2025" → sql_query(question="list each expense under Subscriptions in july 2025")
-   - "budget vs spending" → sql_query(question="budget vs spending")
-
-**CRITICAL**: 
-- ✅ **DO**: Always use question parameter only → sql_query(question="user question")
-- ❌ **DON'T**: Manually specify query_type unless you're 100% certain
-- 🤖 **TRUST**: Let the intelligent agents decide the best approach
+**NO manual routing needed** - Vanna is trained on:
+- Complete database schema (expenses, categories, budgets, users, currency_rates)
+- Business logic (month=1-12, currency=MXN, family tracking)
+- Common query patterns (totals, breakdowns, budget analysis)
+- Example question-SQL pairs for accuracy
 
 ## STEP 3: RESPONSE FORMATTING
 - **Expense entries**: Confirm with amount, category, merchant
-- **Analytics**: Use emojis, formatting, conversational tone
+- **Analytics**: Let Vanna's intelligent formatting shine (already includes emojis, tables, insights)
 - **Errors**: Provide helpful guidance, never just say "error"
 - **Greetings**: Be human-like, warm, mention capabilities briefly
 
@@ -973,10 +613,11 @@ class FinAIAgent:
 - Check confidence scores, ask for confirmation if needed
 - Handle currency conversion properly
 
-⚡ **SQL Query Intelligence**:
-- Try predefined templates first (faster, more reliable)
-- Use dynamic_sql only for complex questions not covered by templates
-- The sql_query tool description contains full details of available options
+⚡ **SQL Query with Vanna AI**:
+- Pass user questions directly to sql_query tool
+- Trust Vanna's RAG-based SQL generation (trained on your database)
+- Vanna handles simple AND complex queries equally well
+- JOINs, aggregations, filters all work automatically
 
 🎯 **User Context**:
 - **CRITICAL**: Each message starts with [SYSTEM: user_id=XXXXX]. Extract this user_id value and use it when calling insert_expense tool.
