@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Environment variables (DO NOT COMMIT SECRETS!)
+.env
+api.env
+
+# Logs
+*.log
+bot.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+populate_budgets.py
+populate_budgets.sql
+
+# Keep Vanna AI data (will be regenerated on Railway if needed)
+# But don't track it in git
+chroma.sqlite3
+*/data_level0.bin
+*/header.bin
+*/length.bin
+*/link_lists.bin

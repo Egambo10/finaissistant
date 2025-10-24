@@ -1,0 +1,17 @@
+# Ignore local files that shouldn't be deployed
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+bot.log
+.DS_Store
+.env.local
+.vscode/
+.idea/
+
+# Keep these - they're needed for Vanna AI
+# chroma.sqlite3
+# UUID folders for vector data
+

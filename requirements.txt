@@ -1,0 +1,13 @@
+python-telegram-bot>=21.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-core>=0.1.0
+openai>=1.35.0
+supabase>=2.4.0
+python-dotenv>=1.0.0
+pydantic>=2.6.4
+dateutils>=0.6.0
+fuzzywuzzy>=0.18.0
+python-levenshtein>=0.25.0
+vanna>=0.7.9
+chromadb>=1.2.0
