@@ -179,8 +179,8 @@ class VannaTrainer:
                 ORDER BY total DESC
             """
         )
-        
-        # Budget vs spending
+
+        # Budget vs spending (English)
         self.vn.train(
             question="How am I doing against my budget this month?",
             sql="""
@@ -197,22 +197,88 @@ class VannaTrainer:
                     WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
                     GROUP BY e.category_id
                 )
-                SELECT 
+                SELECT
                     cb.category_name,
                     COALESCE(cb.budget_amount, 0) as budget,
                     COALESCE(cs.spent_amount, 0) as spent,
                     COALESCE(cb.budget_amount, 0) - COALESCE(cs.spent_amount, 0) as remaining,
-                    CASE 
-                        WHEN cb.budget_amount > 0 
-                        THEN ROUND((COALESCE(cs.spent_amount, 0) / cb.budget_amount * 100), 1) 
-                        ELSE 0 
+                    CASE
+                        WHEN cb.budget_amount > 0
+                        THEN ROUND((COALESCE(cs.spent_amount, 0) / cb.budget_amount * 100), 1)
+                        ELSE 0
                     END as percent_used
                 FROM current_budgets cb
                 LEFT JOIN current_spending cs ON cb.category_id = cs.category_id
                 ORDER BY percent_used DESC
             """
         )
-        
+
+        # Budget vs spending (Spanish - same SQL as English)
+        self.vn.train(
+            question="Cómo voy gastos vs presupuesto este mes",
+            sql="""
+                WITH current_budgets AS (
+                    SELECT b.category_id, c.name as category_name, b.amount as budget_amount
+                    FROM budgets b
+                    JOIN categories c ON c.id = b.category_id
+                    WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                      AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                ),
+                current_spending AS (
+                    SELECT e.category_id, SUM(e.amount) as spent_amount
+                    FROM expenses e
+                    WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
+                    GROUP BY e.category_id
+                )
+                SELECT
+                    cb.category_name,
+                    COALESCE(cb.budget_amount, 0) as budget,
+                    COALESCE(cs.spent_amount, 0) as spent,
+                    COALESCE(cb.budget_amount, 0) - COALESCE(cs.spent_amount, 0) as remaining,
+                    CASE
+                        WHEN cb.budget_amount > 0
+                        THEN ROUND((COALESCE(cs.spent_amount, 0) / cb.budget_amount * 100), 1)
+                        ELSE 0
+                    END as percent_used
+                FROM current_budgets cb
+                LEFT JOIN current_spending cs ON cb.category_id = cs.category_id
+                ORDER BY percent_used DESC
+            """
+        )
+
+        # Budget vs spending variation (Spanish)
+        self.vn.train(
+            question="Como voy gastos va budget este mes",
+            sql="""
+                WITH current_budgets AS (
+                    SELECT b.category_id, c.name as category_name, b.amount as budget_amount
+                    FROM budgets b
+                    JOIN categories c ON c.id = b.category_id
+                    WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                      AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                ),
+                current_spending AS (
+                    SELECT e.category_id, SUM(e.amount) as spent_amount
+                    FROM expenses e
+                    WHERE DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)
+                    GROUP BY e.category_id
+                )
+                SELECT
+                    cb.category_name,
+                    COALESCE(cb.budget_amount, 0) as budget,
+                    COALESCE(cs.spent_amount, 0) as spent,
+                    COALESCE(cb.budget_amount, 0) - COALESCE(cs.spent_amount, 0) as remaining,
+                    CASE
+                        WHEN cb.budget_amount > 0
+                        THEN ROUND((COALESCE(cs.spent_amount, 0) / cb.budget_amount * 100), 1)
+                        ELSE 0
+                    END as percent_used
+                FROM current_budgets cb
+                LEFT JOIN current_spending cs ON cb.category_id = cs.category_id
+                ORDER BY percent_used DESC
+            """
+        )
+
         # Recent expenses
         self.vn.train(
             question="Show me my recent expenses",
