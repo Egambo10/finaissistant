@@ -25,7 +25,7 @@ class VannaTrainer:
     """
     Handles training and SQL generation using Vanna AI
     """
-    def __init__(self, api_key: str, model: str = "gpt-4o"):
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
         self.vn = SupabaseVanna(config={
             'api_key': api_key,
             'model': model
@@ -245,6 +245,36 @@ class VannaTrainer:
                 GROUP BY c.name, c.id
                 ORDER BY total DESC
                 LIMIT 5
+            """
+        )
+        
+        # Budget by category (without spending comparison)
+        self.vn.train(
+            question="Show me the budget by category",
+            sql="""
+                SELECT 
+                    c.name as category_name,
+                    b.amount as budgeted
+                FROM budgets b
+                JOIN categories c ON c.id = b.category_id
+                WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                  AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                ORDER BY b.amount DESC
+            """
+        )
+        
+        # Budget by category in Spanish
+        self.vn.train(
+            question="Cuál es el presupuesto por categoría para este mes",
+            sql="""
+                SELECT 
+                    c.name as category_name,
+                    b.amount as budgeted
+                FROM budgets b
+                JOIN categories c ON c.id = b.category_id
+                WHERE b.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                  AND b.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                ORDER BY b.amount DESC
             """
         )
         

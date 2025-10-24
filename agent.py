@@ -247,8 +247,8 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
         logger = logging.getLogger(__name__)
         try:
             vanna = VannaTrainer(
-                api_key=os.getenv('OPENAI_API_KEY'),
-                model='gpt-4o'
+                api_key=os.getenv('OPENAI_API_KEY')
+                # Uses default model: gpt-4o-mini
             )
             # Train Vanna on database schema and examples
             vanna.train_all()
@@ -432,7 +432,7 @@ Question: {question}
 SQL Query:"""
 
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=300
@@ -512,7 +512,7 @@ Examples:
 """
 
         response = await client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": consultant_prompt}],
             temperature=0.1,
             max_tokens=200
@@ -821,9 +821,9 @@ class FinAIAgent:
         self.classifier = classifier
         self.parser = parser
         
-        # Initialize OpenAI LLM - Using GPT-4o for better decision making
+        # Initialize OpenAI LLM - Using GPT-4o-mini for cost-effective decision making
         self.llm = ChatOpenAI(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             temperature=0
         )
         

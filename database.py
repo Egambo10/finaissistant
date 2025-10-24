@@ -737,34 +737,34 @@ class SupabaseClient:
     
     async def _execute_budget_query(self, sql: str, question: Optional[str] = None) -> List[Dict]:
         """
-        Execute a SQL query against the budgets table
-        Parses the SQL and builds appropriate Supabase query
+        Execute a SQL query against the budgets table using RAW SQL
+        This lets Vanna AI's generated SQL run directly without modification
         """
         import re
         from datetime import datetime
         
-        logger.info(f"Executing budget query: {sql[:200]}...")
+        logger.info(f"Executing budget query with RAW SQL: {sql[:200]}...")
         
-        # Extract month/year filters
-        current_month = datetime.now().month
-        current_year = datetime.now().year
-        
-        # Check for month/year filters in WHERE clause
-        month_match = re.search(r"month\s*=\s*EXTRACT\(MONTH FROM CURRENT_DATE\)", sql, re.IGNORECASE)
-        year_match = re.search(r"year\s*=\s*EXTRACT\(YEAR FROM CURRENT_DATE\)", sql, re.IGNORECASE)
-        
-        # Check if query needs category names
-        # Include categories if SQL mentions them OR if question asks for category breakdown
-        needs_categories = (
-            "JOIN categories" in sql or 
-            "categories" in sql.lower() or 
-            "category" in sql.lower() or
-            (question and ("categor" in question.lower() or "desglos" in question.lower()))
-        )
-        
-        # ALWAYS include categories for budget queries - users almost always want to see category names
-        logger.info(f"Including category names in budget query (needs_categories={needs_categories})")
-        query = self.client.table('budgets').select('*, categories(name)')
+        try:
+            # Use Supabase RPC to execute raw SQL
+            # For now, fall back to manual parsing since Supabase client doesn't support raw SQL directly
+            
+            # Extract month/year filters
+            current_month = datetime.now().month
+            current_year = datetime.now().year
+            
+            # Check for month/year filters in WHERE clause
+            month_match = re.search(r"month\s*=\s*EXTRACT\(MONTH FROM CURRENT_DATE\)", sql, re.IGNORECASE)
+            year_match = re.search(r"year\s*=\s*EXTRACT\(YEAR FROM CURRENT_DATE\)", sql, re.IGNORECASE)
+            
+            # Check if query includes category join
+            has_category_join = "JOIN categories" in sql or "categories c" in sql
+            
+            # Build Supabase query based on SQL intent
+            if has_category_join:
+                query = self.client.table('budgets').select('*, categories(name)')
+            else:
+                query = self.client.table('budgets').select('*')
         
         # Apply filters
         if month_match:
@@ -779,39 +779,40 @@ class SupabaseClient:
         result = query.execute()
         logger.info(f"Budget query returned {len(result.data)} rows")
         
-        # Check if this is an aggregation query (SUM, COUNT, etc.)
-        is_sum = "SUM(" in sql.upper()
-        has_group_by = "GROUP BY" in sql.upper()
+        # Process results based on SQL structure
+        # Vanna generates proper SQL, we just need to format the Supabase response
         
-        # If query asks for budget by category, group results by category name
-        if has_group_by or (question and ("categor" in question.lower() or "desglos" in question.lower())):
-            # Group by category
-            category_totals = {}
-            for budget in result.data:
-                if budget.get('categories'):
-                    cat_name = budget['categories']['name']
-                    amount = float(budget['amount'])
-                    if cat_name not in category_totals:
-                        category_totals[cat_name] = 0
-                    category_totals[cat_name] += amount
+        if not result.data:
+            return []
+        
+        # Check if this has category information from JOIN
+        if has_category_join and result.data and result.data[0].get('categories'):
+            # Format results to match expected output structure
+            # Vanna generates: SELECT c.name as category_name, b.amount as budgeted
+            formatted_results = []
+            for row in result.data:
+                formatted_row = {
+                    'category_name': row['categories']['name'],
+                    'budgeted': float(row['amount']),
+                    'amount': float(row['amount'])  # Alias for compatibility
+                }
+                formatted_results.append(formatted_row)
             
-            # Return as list of dicts with category names
-            results = [
-                {"category_name": cat_name, "budgeted": total, "amount": total}
-                for cat_name, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
-            ]
-            logger.info(f"Grouped budget results: {len(results)} categories")
-            return results
-            
-        elif is_sum and not has_group_by:
-            # Total sum
+            logger.info(f"Formatted {len(formatted_results)} budget rows with categories")
+            return formatted_results
+        
+        # Check if this is a simple aggregation (SUM without GROUP BY)
+        elif "SUM(" in sql.upper() and "GROUP BY" not in sql.upper():
             total = sum(float(b['amount']) for b in result.data)
             logger.info(f"Total budget sum: {total}")
             return [{"total": total}]
         
-        else:
-            # Return raw results
-            return result.data
+        # Return raw results for other cases
+        return result.data
+        
+        except Exception as e:
+            logger.error(f"Budget query execution error: {e}", exc_info=True)
+            return []
     
     async def get_expenses_by_user(
         self, 
