@@ -748,68 +748,68 @@ class SupabaseClient:
         try:
             # Use Supabase RPC to execute raw SQL
             # For now, fall back to manual parsing since Supabase client doesn't support raw SQL directly
-            
+
             # Extract month/year filters
             current_month = datetime.now().month
             current_year = datetime.now().year
-            
+
             # Check for month/year filters in WHERE clause
             month_match = re.search(r"month\s*=\s*EXTRACT\(MONTH FROM CURRENT_DATE\)", sql, re.IGNORECASE)
             year_match = re.search(r"year\s*=\s*EXTRACT\(YEAR FROM CURRENT_DATE\)", sql, re.IGNORECASE)
-            
+
             # Check if query includes category join
             has_category_join = "JOIN categories" in sql or "categories c" in sql
-            
+
             # Build Supabase query based on SQL intent
             if has_category_join:
                 query = self.client.table('budgets').select('*, categories(name)')
             else:
                 query = self.client.table('budgets').select('*')
-        
-        # Apply filters
-        if month_match:
-            query = query.eq('month', current_month)
-            logger.info(f"Filtering by month: {current_month}")
-        
-        if year_match:
-            query = query.eq('year', current_year)
-            logger.info(f"Filtering by year: {current_year}")
-        
-        # Execute query
-        result = query.execute()
-        logger.info(f"Budget query returned {len(result.data)} rows")
-        
-        # Process results based on SQL structure
-        # Vanna generates proper SQL, we just need to format the Supabase response
-        
-        if not result.data:
-            return []
-        
-        # Check if this has category information from JOIN
-        if has_category_join and result.data and result.data[0].get('categories'):
-            # Format results to match expected output structure
-            # Vanna generates: SELECT c.name as category_name, b.amount as budgeted
-            formatted_results = []
-            for row in result.data:
-                formatted_row = {
-                    'category_name': row['categories']['name'],
-                    'budgeted': float(row['amount']),
-                    'amount': float(row['amount'])  # Alias for compatibility
-                }
-                formatted_results.append(formatted_row)
-            
-            logger.info(f"Formatted {len(formatted_results)} budget rows with categories")
-            return formatted_results
-        
-        # Check if this is a simple aggregation (SUM without GROUP BY)
-        elif "SUM(" in sql.upper() and "GROUP BY" not in sql.upper():
-            total = sum(float(b['amount']) for b in result.data)
-            logger.info(f"Total budget sum: {total}")
-            return [{"total": total}]
-        
-        # Return raw results for other cases
-        return result.data
-        
+
+            # Apply filters
+            if month_match:
+                query = query.eq('month', current_month)
+                logger.info(f"Filtering by month: {current_month}")
+
+            if year_match:
+                query = query.eq('year', current_year)
+                logger.info(f"Filtering by year: {current_year}")
+
+            # Execute query
+            result = query.execute()
+            logger.info(f"Budget query returned {len(result.data)} rows")
+
+            # Process results based on SQL structure
+            # Vanna generates proper SQL, we just need to format the Supabase response
+
+            if not result.data:
+                return []
+
+            # Check if this has category information from JOIN
+            if has_category_join and result.data and result.data[0].get('categories'):
+                # Format results to match expected output structure
+                # Vanna generates: SELECT c.name as category_name, b.amount as budgeted
+                formatted_results = []
+                for row in result.data:
+                    formatted_row = {
+                        'category_name': row['categories']['name'],
+                        'budgeted': float(row['amount']),
+                        'amount': float(row['amount'])  # Alias for compatibility
+                    }
+                    formatted_results.append(formatted_row)
+
+                logger.info(f"Formatted {len(formatted_results)} budget rows with categories")
+                return formatted_results
+
+            # Check if this is a simple aggregation (SUM without GROUP BY)
+            elif "SUM(" in sql.upper() and "GROUP BY" not in sql.upper():
+                total = sum(float(b['amount']) for b in result.data)
+                logger.info(f"Total budget sum: {total}")
+                return [{"total": total}]
+
+            # Return raw results for other cases
+            return result.data
+
         except Exception as e:
             logger.error(f"Budget query execution error: {e}", exc_info=True)
             return []
