@@ -156,13 +156,21 @@ Output JSON format:
   "currency": "MXN" (default) or "CAD", "USD", etc.
 }
 
-If the text is NOT an expense, return: {"error": "not_an_expense"}
+IMPORTANT RULES:
+1. If the text ends with a category name (like "restaurants", "groceries", "gas"), use that as the merchant
+2. Category names: groceries, restaurants, gas, transportation, clothing, entertainment, etc.
+3. If unsure, extract the most relevant merchant/category mentioned
+4. If the text is NOT an expense, return: {"error": "not_an_expense"}
 
 Examples:
+- "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "amount": 60, "currency": "MXN"}
 - "add 971 in gas categories" → {"merchant": "gas", "amount": 971, "currency": "MXN"}
+- "Costco 120 groceries" → {"merchant": "groceries", "amount": 120, "currency": "MXN"}
 - "I paid 50 bucks for lunch today" → {"merchant": "lunch", "amount": 50, "currency": "MXN"}
 - "compré café por 45 pesos" → {"merchant": "café", "amount": 45, "currency": "MXN"}
-- "what's my total spending?" → {"error": "not_an_expense"}"""
+- "what's my total spending?" → {"error": "not_an_expense"}
+- "yes please" → {"error": "not_an_expense"}
+- "yes" → {"error": "not_an_expense"}"""
                 }, {
                     "role": "user",
                     "content": text
