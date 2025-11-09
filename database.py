@@ -316,14 +316,22 @@ class SupabaseClient:
                 if not month_name or not year:
                     return []
                 
-                # Convert month name to number
-                month_num = None
-                for i, m in enumerate(calendar.month_name):
-                    if m.lower() == month_name.lower():
-                        month_num = i
-                        break
-                
+                # Convert month name to number (supports English and Spanish)
+                month_mapping = {
+                    # English
+                    'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                    'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                    'september': 9, 'october': 10, 'november': 11, 'december': 12,
+                    # Spanish
+                    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+                    'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+                    'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
+                }
+
+                month_num = month_mapping.get(month_name.lower())
+
                 if not month_num:
+                    logger.warning(f"Unrecognized month name: {month_name}")
                     return []
                 
                 # Calculate date range for the specific month
@@ -374,14 +382,22 @@ class SupabaseClient:
                 if not month_name or not year:
                     return []
                 
-                # Convert month name to number
-                month_num = None
-                for i, m in enumerate(calendar.month_name):
-                    if m.lower() == month_name.lower():
-                        month_num = i
-                        break
-                
+                # Convert month name to number (supports English and Spanish)
+                month_mapping = {
+                    # English
+                    'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                    'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                    'september': 9, 'october': 10, 'november': 11, 'december': 12,
+                    # Spanish
+                    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+                    'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+                    'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
+                }
+
+                month_num = month_mapping.get(month_name.lower())
+
                 if not month_num:
+                    logger.warning(f"Unrecognized month name: {month_name}")
                     return []
                 
                 logger.info(f"Custom month budget query: {month_name} {year}")

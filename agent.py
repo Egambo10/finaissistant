@@ -429,15 +429,33 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
         - Use: WHERE month = EXTRACT(MONTH FROM CURRENT_DATE) AND year = EXTRACT(YEAR FROM CURRENT_DATE)
         """
         
+        # Get current date for context
+        from datetime import datetime
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        current_year = datetime.now().year
+        current_month = datetime.now().strftime('%B')  # e.g., "November"
+
         prompt = f"""Generate a safe PostgreSQL SELECT query for this question: "{question}"
 
 {schema_info}
 
+Context:
+- Today's date: {current_date}
+- Current year: {current_year}
+- Current month: {current_month}
+
+Month Name Translations (English/Spanish):
+- January/Enero=1, February/Febrero=2, March/Marzo=3, April/Abril=4
+- May/Mayo=5, June/Junio=6, July/Julio=7, August/Agosto=8
+- September/Septiembre=9, October/Octubre=10, November/Noviembre=11, December/Diciembre=12
+
 Requirements:
 - Only SELECT statements allowed
 - Use proper JOINs for relations
-- Include currency formatting (assume MXN)  
+- Include currency formatting (assume MXN)
 - Use proper date filtering with PostgreSQL functions
+- When filtering by month name, ALWAYS include year filter: EXTRACT(YEAR FROM expense_date) = YYYY
+- If only month is mentioned (no year), assume current year ({current_year})
 - Family expense tracking - query all expenses, not user-specific
 - Return meaningful column names
 - Limit results to reasonable amounts (max 100 rows)

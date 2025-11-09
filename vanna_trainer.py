@@ -267,7 +267,7 @@ class VannaTrainer:
         self.vn.train(
             question="Cuál es el presupuesto por categoría para este mes",
             sql="""
-                SELECT 
+                SELECT
                     c.name as category_name,
                     b.amount as budgeted
                 FROM budgets b
@@ -277,7 +277,75 @@ class VannaTrainer:
                 ORDER BY b.amount DESC
             """
         )
-        
+
+        # Month-specific queries in English (with year)
+        self.vn.train(
+            question="Show me my expenses in November 2025",
+            sql="""
+                SELECT
+                    e.expense_detail,
+                    e.amount,
+                    c.name as category,
+                    e.expense_date
+                FROM expenses e
+                JOIN categories c ON c.id = e.category_id
+                WHERE EXTRACT(MONTH FROM e.expense_date) = 11
+                  AND EXTRACT(YEAR FROM e.expense_date) = 2025
+                ORDER BY e.expense_date DESC
+            """
+        )
+
+        # Month-specific queries in Spanish (with year)
+        self.vn.train(
+            question="Muéstrame mis gastos de noviembre 2025",
+            sql="""
+                SELECT
+                    e.expense_detail,
+                    e.amount,
+                    c.name as category,
+                    e.expense_date
+                FROM expenses e
+                JOIN categories c ON c.id = e.category_id
+                WHERE EXTRACT(MONTH FROM e.expense_date) = 11
+                  AND EXTRACT(YEAR FROM e.expense_date) = 2025
+                ORDER BY e.expense_date DESC
+            """
+        )
+
+        # Category breakdown for specific month (English)
+        self.vn.train(
+            question="Show me spending by category in July 2025",
+            sql="""
+                SELECT
+                    c.name as category,
+                    COALESCE(SUM(e.amount), 0) as total,
+                    COUNT(e.id) as count
+                FROM categories c
+                LEFT JOIN expenses e ON e.category_id = c.id
+                    AND EXTRACT(MONTH FROM e.expense_date) = 7
+                    AND EXTRACT(YEAR FROM e.expense_date) = 2025
+                GROUP BY c.name, c.id
+                ORDER BY total DESC
+            """
+        )
+
+        # Category breakdown for specific month (Spanish)
+        self.vn.train(
+            question="Gastos por categoría en julio 2025",
+            sql="""
+                SELECT
+                    c.name as category,
+                    COALESCE(SUM(e.amount), 0) as total,
+                    COUNT(e.id) as count
+                FROM categories c
+                LEFT JOIN expenses e ON e.category_id = c.id
+                    AND EXTRACT(MONTH FROM e.expense_date) = 7
+                    AND EXTRACT(YEAR FROM e.expense_date) = 2025
+                GROUP BY c.name, c.id
+                ORDER BY total DESC
+            """
+        )
+
         logger.info("✅ Example query training complete")
     
     def train_all(self):
