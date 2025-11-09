@@ -21,15 +21,8 @@ class ExpenseParser:
     
     def parse_expense_text(self, text: str) -> Optional[Dict]:
         """
-        Parse expense text into components
-        Supports formats like:
-        - "Costco 120.54"
-        - "120.54 supermarket"
-        - "$57.74 supermarket"
-        - "57.74 CAD supermarket"
-        - "add 971 in gas"
-        - "spent 120 on coffee"
-        - "paid 50 for lunch"
+        Parse expense text into components using AI-first approach
+        Falls back to simple regex only for obvious patterns
         """
         if not text or not isinstance(text, str):
             return None
@@ -38,71 +31,29 @@ class ExpenseParser:
         if not text:
             return None
 
-        # Pattern C: Natural language → "add/spent/paid [amount] in/on/for [merchant/category]"
-        # Handles: "add 971 in gas", "spent 120 on coffee", "paid 50 for lunch"
-        pattern_c = r'^(?:add|spent|paid|record|gastado?|pague?)\s+(\$?\d+[\d\.,]*)\s+(?:in|on|for|en|de|para)\s+(.+?)(?:\s+categor(?:y|ies|ía|ías))?$'
-        match_c = re.match(pattern_c, text, re.IGNORECASE)
+        # Quick regex check ONLY for super obvious patterns like "Costco 120"
+        # Pattern: merchant + number (most basic case)
+        simple_pattern = r'^([a-zA-Z][a-zA-Z\s]{1,30})\s+(\d+(?:\.\d{1,2})?)$'
+        simple_match = re.match(simple_pattern, text, re.IGNORECASE)
 
-        if match_c:
-            amount_str = match_c.group(1)
-            merchant = match_c.group(2).strip()
-
+        if simple_match:
+            merchant = simple_match.group(1).strip()
+            amount_str = simple_match.group(2)
             amount = self._parse_amount(amount_str)
-            if amount is None:
-                return None
 
-            if not merchant:
-                return None
+            if amount and merchant:
+                return {
+                    'merchant': merchant,
+                    'amount': amount,
+                    'currency': 'MXN'
+                }
 
-            return {
-                'merchant': merchant,
-                'amount': amount,
-                'currency': self._extract_currency_from_amount(amount_str) or 'MXN'
-            }
-
-        # Pattern A: merchant first → "Costco 120.54 [CAD]"
-        pattern_a = r'^([^\d]+?)\s+(\$?\d[\d\.,]*)\s*([A-Za-z]{3})?$'
-        match_a = re.match(pattern_a, text, re.IGNORECASE)
-        
-        if match_a:
-            merchant = match_a.group(1).strip()
-            amount_str = match_a.group(2)
-            currency = match_a.group(3)
-            
-            amount = self._parse_amount(amount_str)
-            if amount is None:
-                return None
-                
-            return {
-                'merchant': merchant,
-                'amount': amount,
-                'currency': currency or self._extract_currency_from_amount(amount_str) or 'MXN'
-            }
-        
-        # Pattern B: amount first → "120.54 supermarket" or "$57.74 supermarket" or "57.74 CAD supermarket"
-        pattern_b = r'^(\$?\d+[\d\.,]*)\s*(?:([A-Za-z]{3})\s+)?(.+)$'
-        match_b = re.match(pattern_b, text, re.IGNORECASE)
-
-        if match_b:
-            amount_str = match_b.group(1)
-            currency = match_b.group(2)
-            merchant = match_b.group(3).strip()
-
-            amount = self._parse_amount(amount_str)
-            if amount is None:
-                return None
-
-            if not merchant:
-                return None
-
-            return {
-                'merchant': merchant,
-                'amount': amount,
-                'currency': currency or self._extract_currency_from_amount(amount_str) or 'MXN'
-            }
-
-        # FALLBACK: AI-powered parsing for any natural language
-        # This makes the parser truly dynamic and conversational
+        # Everything else goes to AI - this is the PRIMARY parser now
+        # This handles:
+        # - "And Marissa 155 under restaurants"
+        # - "Spent 155 under restaurants, description is Marissa"
+        # - "155 for lunch yesterday"
+        # - ANY natural language format
         return self._parse_with_ai(text)
     
     def _parse_amount(self, amount_str: str) -> Optional[float]:
@@ -151,26 +102,32 @@ class ExpenseParser:
 
 Output JSON format:
 {
-  "merchant": "merchant or category name",
+  "merchant": "category or merchant name",
   "amount": numeric value,
   "currency": "MXN" (default) or "CAD", "USD", etc.
 }
 
-IMPORTANT RULES:
-1. If the text ends with a category name (like "restaurants", "groceries", "gas"), use that as the merchant
-2. Category names: groceries, restaurants, gas, transportation, clothing, entertainment, etc.
-3. If unsure, extract the most relevant merchant/category mentioned
-4. If the text is NOT an expense, return: {"error": "not_an_expense"}
+CRITICAL RULES:
+1. Extract the AMOUNT (number) first
+2. Look for category hints: "under [category]", "in [category]", "[category]" at the end
+3. Common categories: restaurants, groceries, gas, transportation, clothing, entertainment, oxxo, etc.
+4. If category is mentioned, use the CATEGORY as merchant (ignore other words like names/descriptions)
+5. Words like "description", "concept", person names are NOT the merchant - they're just notes
+6. If NO category mentioned, use the actual merchant/store name
+7. If text is NOT an expense (like questions or confirmations), return: {"error": "not_an_expense"}
 
 Examples:
+- "And Marissa 155 under restaurants" → {"merchant": "restaurants", "amount": 155, "currency": "MXN"}
+- "Spent 155 under restaurants, description is Marissa" → {"merchant": "restaurants", "amount": 155, "currency": "MXN"}
 - "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "amount": 60, "currency": "MXN"}
 - "add 971 in gas categories" → {"merchant": "gas", "amount": 971, "currency": "MXN"}
 - "Costco 120 groceries" → {"merchant": "groceries", "amount": 120, "currency": "MXN"}
+- "Costco 120" → {"merchant": "Costco", "amount": 120, "currency": "MXN"}
 - "I paid 50 bucks for lunch today" → {"merchant": "lunch", "amount": 50, "currency": "MXN"}
 - "compré café por 45 pesos" → {"merchant": "café", "amount": 45, "currency": "MXN"}
 - "what's my total spending?" → {"error": "not_an_expense"}
 - "yes please" → {"error": "not_an_expense"}
-- "yes" → {"error": "not_an_expense"}"""
+- "Marissa is just concept/description" → {"error": "not_an_expense"}"""
                 }, {
                     "role": "user",
                     "content": text
