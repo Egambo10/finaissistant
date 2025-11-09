@@ -78,11 +78,26 @@ class ParseExpenseTool(BaseTool):
         
         # Only parse if it really looks like an expense entry
         result = self.parser.parse_expense_text(text)
-        
+
         # Additional validation - if parsed amount is suspiciously high (like a year), reject
-        if result and result.get('amount', 0) > 5000:  # Expenses over $5000 are suspicious
-            return json.dumps(None)
-            
+        # Use currency-aware thresholds: MXN can be higher since 1 MXN ≈ 0.05 USD
+        if result:
+            amount = result.get('amount', 0)
+            currency = result.get('currency', 'MXN')
+
+            # Set reasonable thresholds per currency
+            thresholds = {
+                'MXN': 100000,  # ~$5,000 USD
+                'CAD': 10000,
+                'USD': 10000,
+                'EUR': 10000,
+                'GBP': 10000
+            }
+
+            max_amount = thresholds.get(currency, 10000)
+            if amount > max_amount:
+                return json.dumps(None)
+
         return json.dumps(result)
 
 class ClassifyExpenseTool(BaseTool):
