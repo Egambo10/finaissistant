@@ -103,6 +103,7 @@ class ExpenseParser:
 Output JSON format:
 {
   "merchant": "category or merchant name",
+  "detail": "description/concept/notes (optional)",
   "amount": numeric value,
   "currency": "MXN" (default) or "CAD", "USD", etc.
 }
@@ -111,23 +112,22 @@ CRITICAL RULES:
 1. Extract the AMOUNT (number) first
 2. Look for category hints: "under [category]", "in [category]", "[category]" at the end
 3. Common categories: restaurants, groceries, gas, transportation, clothing, entertainment, oxxo, etc.
-4. If category is mentioned, use the CATEGORY as merchant (ignore other words like names/descriptions)
-5. Words like "description", "concept", person names are NOT the merchant - they're just notes
-6. If NO category mentioned, use the actual merchant/store name
-7. If text is NOT an expense (like questions or confirmations), return: {"error": "not_an_expense"}
+4. Extract TWO things:
+   - "merchant": The CATEGORY name if mentioned (restaurants, groceries, etc.) OR the actual store name if no category
+   - "detail": Any description, concept, person name, or notes (this is OPTIONAL, can be null)
+5. If text is NOT an expense (like questions or confirmations), return: {"error": "not_an_expense"}
 
 Examples:
-- "And Marissa 155 under restaurants" → {"merchant": "restaurants", "amount": 155, "currency": "MXN"}
-- "Spent 155 under restaurants, description is Marissa" → {"merchant": "restaurants", "amount": 155, "currency": "MXN"}
-- "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "amount": 60, "currency": "MXN"}
-- "add 971 in gas categories" → {"merchant": "gas", "amount": 971, "currency": "MXN"}
-- "Costco 120 groceries" → {"merchant": "groceries", "amount": 120, "currency": "MXN"}
-- "Costco 120" → {"merchant": "Costco", "amount": 120, "currency": "MXN"}
-- "I paid 50 bucks for lunch today" → {"merchant": "lunch", "amount": 50, "currency": "MXN"}
-- "compré café por 45 pesos" → {"merchant": "café", "amount": 45, "currency": "MXN"}
+- "And Marissa 155 under restaurants" → {"merchant": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}
+- "Spent 155 under restaurants, description is Marissa" → {"merchant": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}
+- "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "detail": "Pan de muerto marisa", "amount": 60, "currency": "MXN"}
+- "add 971 in gas categories" → {"merchant": "gas", "detail": null, "amount": 971, "currency": "MXN"}
+- "Costco 120 groceries" → {"merchant": "groceries", "detail": "Costco", "amount": 120, "currency": "MXN"}
+- "Costco 120" → {"merchant": "Costco", "detail": null, "amount": 120, "currency": "MXN"}
+- "I paid 50 bucks for lunch today" → {"merchant": "lunch", "detail": null, "amount": 50, "currency": "MXN"}
+- "compré café por 45 pesos" → {"merchant": "café", "detail": null, "amount": 45, "currency": "MXN"}
 - "what's my total spending?" → {"error": "not_an_expense"}
-- "yes please" → {"error": "not_an_expense"}
-- "Marissa is just concept/description" → {"error": "not_an_expense"}"""
+- "yes please" → {"error": "not_an_expense"}"""
                 }, {
                     "role": "user",
                     "content": text
@@ -156,8 +156,16 @@ Examples:
             except (ValueError, TypeError):
                 return None
 
+            # Extract detail if present
+            detail = result.get("detail")
+            if detail and detail != "null":
+                detail = str(detail).strip()
+            else:
+                detail = None
+
             return {
                 "merchant": str(result["merchant"]).strip(),
+                "detail": detail,
                 "amount": amount,
                 "currency": result.get("currency", "MXN")
             }

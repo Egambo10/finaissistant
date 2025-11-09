@@ -26,7 +26,7 @@ class ClassifyExpenseInput(BaseModel):
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
     category_id: str = Field(description="Category ID (UUID string from classify_expense)")
-    merchant: str = Field(description="Merchant name")
+    merchant: str = Field(description="Expense detail/description (what was purchased)")
     amount: float = Field(description="Expense amount")
     currency: str = Field(default="MXN", description="Currency code")
 
@@ -903,8 +903,10 @@ class FinAIAgent:
 **Purpose**: Parse natural language text to extract expense information
 **Use when**: User provides text that might contain expense data
 **Input**: text (string)
-**Output**: JSON with merchant, amount, currency, or null if not an expense
-**Examples**: "Costco 120.54" → {{"merchant": "Costco", "amount": 120.54, "currency": "MXN"}}
+**Output**: JSON with merchant (category hint), detail (description), amount, currency, or null if not an expense
+**Examples**:
+- "Marissa 155 under restaurants" → {{"merchant": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}}
+- "Costco 120" → {{"merchant": "Costco", "detail": null, "amount": 120, "currency": "MXN"}}
 
 ## 🔧 TOOL 2: classify_expense  
 **Purpose**: Automatically categorize expenses using AI classification
@@ -916,9 +918,12 @@ class FinAIAgent:
 ## 🔧 TOOL 3: insert_expense
 **Purpose**: Save expense to database with proper user attribution
 **Use when**: You have parsed and classified an expense successfully
-**Input**: user_id, category_id (UUID string from classify_expense), merchant, amount, currency
+**Input**: user_id, category_id (UUID string from classify_expense), merchant (detail/description from parse_expense), amount, currency
 **Output**: Confirmation message or error
-**CRITICAL**: Pass the categoryId from classify_expense DIRECTLY to insert_expense - do not modify it!
+**CRITICAL WORKFLOW**:
+1. parse_expense returns: merchant (category hint), detail (description), amount
+2. classify_expense using parse_expense.merchant → returns categoryId
+3. insert_expense with: categoryId from step 2, merchant=parse_expense.detail (or parse_expense.merchant if detail is null)
 
 ## 🔧 TOOL 4: convert_currency
 **Purpose**: Convert between different currencies using live rates
