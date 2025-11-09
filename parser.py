@@ -23,14 +23,39 @@ class ExpenseParser:
         - "120.54 supermarket"
         - "$57.74 supermarket"
         - "57.74 CAD supermarket"
+        - "add 971 in gas"
+        - "spent 120 on coffee"
+        - "paid 50 for lunch"
         """
         if not text or not isinstance(text, str):
             return None
-            
+
         text = text.strip()
         if not text:
             return None
-        
+
+        # Pattern C: Natural language → "add/spent/paid [amount] in/on/for [merchant/category]"
+        # Handles: "add 971 in gas", "spent 120 on coffee", "paid 50 for lunch"
+        pattern_c = r'^(?:add|spent|paid|record|gastado?|pague?)\s+(\$?\d+[\d\.,]*)\s+(?:in|on|for|en|de|para)\s+(.+?)(?:\s+categor(?:y|ies|ía|ías))?$'
+        match_c = re.match(pattern_c, text, re.IGNORECASE)
+
+        if match_c:
+            amount_str = match_c.group(1)
+            merchant = match_c.group(2).strip()
+
+            amount = self._parse_amount(amount_str)
+            if amount is None:
+                return None
+
+            if not merchant:
+                return None
+
+            return {
+                'merchant': merchant,
+                'amount': amount,
+                'currency': self._extract_currency_from_amount(amount_str) or 'MXN'
+            }
+
         # Pattern A: merchant first → "Costco 120.54 [CAD]"
         pattern_a = r'^([^\d]+?)\s+(\$?\d[\d\.,]*)\s*([A-Za-z]{3})?$'
         match_a = re.match(pattern_a, text, re.IGNORECASE)
