@@ -234,12 +234,12 @@ TOTALS:
 CATEGORY BREAKDOWNS:
 - 'month_by_category': This month's spending by category with counts and percentages
 - 'today_by_category': Today's spending by category
-- 'yesterday_by_category': Yesterday's spending by category  
-- 'custom_month_category': Specific month/year spending by category (requires month='july', year=2025)
+- 'yesterday_by_category': Yesterday's spending by category
+- 'custom_month_category': Specific month spending by category (requires month='july', year is optional - defaults to current year)
 
 BUDGET ANALYSIS:
 - 'budget_vs_spending': Current month budget vs actual spending with progress %
-- 'custom_month_budget': Historical month budget vs spending (requires month='july', year=2025)
+- 'custom_month_budget': Historical month budget vs spending (requires month='july', year is optional - defaults to current year)
 
 TRANSACTION HISTORY:
 - 'recent_expenses': Last 10 expenses with details, categories, dates, and users
@@ -641,22 +641,30 @@ Examples:
                 sql = custom_sql
             elif query_type == 'custom_month_category':
                 # Handle specific month/year category breakdown
-                if not month or not year:
-                    raise Exception("Month and year required for custom_month_category")
-                
+                if not month:
+                    raise Exception("Month required for custom_month_category")
+
+                # Default to current year if not specified
+                from datetime import datetime
+                query_year = year if year else datetime.now().year
+
                 # Pass month/year info to database via template name
-                template_name = f"custom_month_category_{month.lower()}_{year}"
+                template_name = f"custom_month_category_{month.lower()}_{query_year}"
                 sql = "-- Custom month category query"
-                result = await self.db_client.execute_raw_sql(sql, [month.lower(), year], template_name, None)
+                result = await self.db_client.execute_raw_sql(sql, [month.lower(), query_year], template_name, None)
             elif query_type == 'custom_month_budget':
                 # Handle specific month/year budget vs spending analysis
-                if not month or not year:
-                    raise Exception("Month and year required for custom_month_budget")
-                
+                if not month:
+                    raise Exception("Month required for custom_month_budget")
+
+                # Default to current year if not specified
+                from datetime import datetime
+                query_year = year if year else datetime.now().year
+
                 # Pass month/year info to database via template name
-                template_name = f"custom_month_budget_{month.lower()}_{year}"
+                template_name = f"custom_month_budget_{month.lower()}_{query_year}"
                 sql = "-- Custom month budget query"
-                result = await self.db_client.execute_raw_sql(sql, [month.lower(), year], template_name, None)
+                result = await self.db_client.execute_raw_sql(sql, [month.lower(), query_year], template_name, None)
             elif query_type in self.templates:
                 sql = self.templates[query_type]
                 result = await self.db_client.execute_raw_sql(sql, [], query_type, None)
@@ -936,11 +944,13 @@ class FinAIAgent:
 - query_type='month_by_category' → Current month spending by category with percentages
 - query_type='today_by_category' → Today's spending by category
 - query_type='yesterday_by_category' → Yesterday's spending by category
-- query_type='custom_month_category', month='july', year=2025 → Specific month breakdown
+- query_type='custom_month_category', month='july' → Specific month breakdown (year optional, defaults to current year)
+- query_type='custom_month_category', month='november', year=2023 → Specific month in past year
 
 **BUDGET ANALYSIS:**
 - query_type='budget_vs_spending' → Current month budget vs actual with progress %
-- query_type='custom_month_budget', month='july', year=2025 → Historical budget analysis
+- query_type='custom_month_budget', month='july' → Month budget analysis (year optional, defaults to current year)
+- query_type='custom_month_budget', month='november', year=2023 → Historical budget for past year
 
 **TRANSACTION HISTORY:**
 - query_type='recent_expenses' → Last 10 detailed transactions with users and dates
