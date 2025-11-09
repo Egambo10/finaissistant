@@ -25,7 +25,7 @@ class ClassifyExpenseInput(BaseModel):
 
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
-    category_id: int = Field(description="Category ID")
+    category_id: str = Field(description="Category ID (UUID string from classify_expense)")
     merchant: str = Field(description="Merchant name")
     amount: float = Field(description="Expense amount")
     currency: str = Field(default="MXN", description="Currency code")
@@ -126,27 +126,28 @@ class InsertExpenseTool(BaseTool):
         super().__init__(**kwargs)
         object.__setattr__(self, 'db_client', db_client)
     
-    async def _arun(self, user_id: int, category_id: int, merchant: str, amount: float, currency: str = "MXN") -> str:
+    async def _arun(self, user_id: int, category_id: str, merchant: str, amount: float, currency: str = "MXN") -> str:
         try:
             # Convert Telegram user_id to internal UUID user_id
             user_data = await self.db_client.get_user_by_telegram_id(int(user_id))
             if not user_data:
                 raise Exception(f"User not found for Telegram ID: {user_id}")
-            
+
             internal_user_id = user_data['id']  # This is the UUID
-            
-            # Get all categories to find the UUID for the given category_id (integer)
+
+            # category_id should be a UUID string from classify_expense
+            # Validate it exists in the categories list
             categories = await self.db_client.get_categories()
             if not categories:
                 raise Exception("No categories found in database")
-            
-            # Find category by position/index (LangChain agent passes category index as integer)
-            if isinstance(category_id, int) and 0 <= category_id < len(categories):
-                category_uuid = categories[category_id]['id']  # This is the UUID
-            else:
-                # Fallback: treat category_id as already a UUID string
-                category_uuid = str(category_id)
-            
+
+            # Verify the category_id exists
+            category_uuid = str(category_id)
+            category_exists = any(cat['id'] == category_uuid for cat in categories)
+
+            if not category_exists:
+                raise Exception(f"Invalid category_id: {category_uuid}")
+
             await self.db_client.insert_expense(
                 user_id=internal_user_id,
                 category_id=category_uuid,
@@ -158,7 +159,7 @@ class InsertExpenseTool(BaseTool):
         except Exception as e:
             raise Exception(f"Database error inserting expense: {str(e)}")
     
-    def _run(self, user_id: int, category_id: int, merchant: str, amount: float, currency: str = "MXN") -> str:
+    def _run(self, user_id: int, category_id: str, merchant: str, amount: float, currency: str = "MXN") -> str:
         import asyncio
         try:
             loop = asyncio.get_event_loop()
@@ -874,9 +875,9 @@ class FinAIAgent:
 ## 🔧 TOOL 3: insert_expense
 **Purpose**: Save expense to database with proper user attribution
 **Use when**: You have parsed and classified an expense successfully
-**Input**: user_id, category_id, merchant, amount, currency
+**Input**: user_id, category_id (UUID string from classify_expense), merchant, amount, currency
 **Output**: Confirmation message or error
-**Note**: Handles UUID conversion automatically for user_id and category_id
+**CRITICAL**: Pass the categoryId from classify_expense DIRECTLY to insert_expense - do not modify it!
 
 ## 🔧 TOOL 4: convert_currency
 **Purpose**: Convert between different currencies using live rates
