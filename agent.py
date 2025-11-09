@@ -963,6 +963,17 @@ class FinAIAgent:
 # INTELLIGENT DECISION MAKING PROCESS
 
 ## STEP 1: MESSAGE CLASSIFICATION
+
+**CRITICAL - Check Conversation Context First!**
+- **IF** the conversation history shows you JUST asked a confirmation question
+- **AND** the current message is a confirmation ("yes", "yes please", "si", "correct", "ok")
+- **THEN** extract the expense details from YOUR PREVIOUS MESSAGE and complete the action
+- **DO NOT** call parse_expense on "yes" - it will fail!
+- **Example**:
+  - You asked: "Categorize under Restaurants?"
+  - User says: "Yes pls"
+  - Action: Extract amount/category from YOUR previous message, call insert_expense
+
 **Greeting/Chat** → Respond naturally without tools
 - "hi", "hello", "how are you", casual conversation
 - Be warm, friendly, conversational like chatting with a human
@@ -971,6 +982,7 @@ class FinAIAgent:
 - "Costco 120.54", "Spent 45 on dinner", "Uber 25 dollars"
 - Any text with merchant + amount pattern
 - NOT questions about spending (those are analytics)
+- **IMPORTANT**: If classification confidence is high (>0.7), DON'T ask for confirmation - just save it!
 
 **Analytics/Questions** → Use sql_query with intelligent routing
 - Questions about spending, budgets, categories, totals, breakdowns
