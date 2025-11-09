@@ -606,8 +606,45 @@ class SupabaseClient:
                     # Handle natural language date contexts
                     if not start_date and question:
                         today = datetime.now().date()
-                        
-                        if "last month" in question.lower():
+                        question_lower = question.lower()
+
+                        # Check for specific month names (English and Spanish)
+                        month_mapping = {
+                            'january': 1, 'enero': 1,
+                            'february': 2, 'febrero': 2,
+                            'march': 3, 'marzo': 3,
+                            'april': 4, 'abril': 4,
+                            'may': 5, 'mayo': 5,
+                            'june': 6, 'junio': 6,
+                            'july': 7, 'julio': 7,
+                            'august': 8, 'agosto': 8,
+                            'september': 9, 'septiembre': 9,
+                            'october': 10, 'octubre': 10,
+                            'november': 11, 'noviembre': 11,
+                            'december': 12, 'diciembre': 12
+                        }
+
+                        # Extract year from question if present
+                        import re as re_year
+                        year_match = re_year.search(r'\b(20\d{2})\b', question_lower)
+                        query_year = int(year_match.group(1)) if year_match else today.year
+
+                        # Check if question mentions a specific month
+                        month_found = None
+                        for month_name, month_num in month_mapping.items():
+                            if month_name in question_lower:
+                                month_found = month_num
+                                break
+
+                        if month_found:
+                            # Specific month query
+                            start_date = datetime(query_year, month_found, 1).date()
+                            if month_found == 12:
+                                end_date = datetime(query_year + 1, 1, 1).date()
+                            else:
+                                end_date = datetime(query_year, month_found + 1, 1).date()
+                            logger.info(f"Detected month query: {month_found}/{query_year}")
+                        elif "last month" in question_lower:
                             # Last month
                             if today.month == 1:
                                 start_date = datetime(today.year - 1, 12, 1).date()
@@ -615,7 +652,7 @@ class SupabaseClient:
                             else:
                                 start_date = datetime(today.year, today.month - 1, 1).date()
                                 end_date = datetime(today.year, today.month, 1).date()
-                        elif "this month" in question.lower():
+                        elif "this month" in question_lower:
                             # This month (1st of current month to end of month)
                             start_date = datetime(today.year, today.month, 1).date()
                             # End of current month
@@ -623,11 +660,11 @@ class SupabaseClient:
                                 end_date = datetime(today.year + 1, 1, 1).date()
                             else:
                                 end_date = datetime(today.year, today.month + 1, 1).date()
-                        elif "this year" in question.lower():
+                        elif "this year" in question_lower:
                             # This year (Jan 1 to today)
                             start_date = datetime(today.year, 1, 1).date()
                             end_date = today
-                        elif "last year" in question.lower():
+                        elif "last year" in question_lower:
                             # Last year (Jan 1 to Dec 31 of previous year)
                             start_date = datetime(today.year - 1, 1, 1).date()
                             end_date = datetime(today.year, 1, 1).date()
