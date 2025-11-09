@@ -52,7 +52,16 @@ class SupabaseClient:
             
         except Exception:
             return None
-    
+
+    async def get_all_users(self) -> List[Dict]:
+        """Get all users for sending reminders"""
+        try:
+            result = self.client.table('users').select('id, name, telegram_id').execute()
+            return result.data if result.data else []
+        except Exception as e:
+            logger.error(f"Error fetching all users: {e}")
+            return []
+
     async def get_categories(self) -> List[Dict]:
         """Get all categories"""
         try:

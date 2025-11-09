@@ -12,6 +12,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime
+import pytz
 
 from database import SupabaseClient
 from classifier import ExpenseClassifier
@@ -40,6 +44,8 @@ parser = None
 converter = None
 hybrid_agent = None
 pending_expenses = {}
+bot_application = None
+scheduler = None
 
 async def initialize_components():
     """Initialize all components including hybrid AI agent"""
@@ -137,6 +143,20 @@ async def insights_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error generating insights: {e}")
         await update.message.reply_text("❌ Couldn't generate insights right now. Try again later!")
 
+async def reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manually trigger a reminder test"""
+    await update.message.reply_text(
+        "🔔 **Daily Expense Reminder**\n\n"
+        "Hey! Do you have any expenses from today to record?\n\n"
+        "💡 Just type them naturally:\n"
+        "• \"Costco 1500\"\n"
+        "• \"Spent 250 on dinner\"\n"
+        "• \"Uber 120 pesos\"\n\n"
+        "Or reply with 'No' if you have no expenses today. 😊\n\n"
+        "**Note:** You'll automatically receive this reminder every day at 7pm CST!",
+        parse_mode='Markdown'
+    )
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enhanced help with hybrid capabilities"""
     help_text = """🤖 **FinAIssistant Hybrid Help**
@@ -166,7 +186,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📊 **Smart commands:**
 • `/quick` - Quick analysis menu
 • `/insights` - AI analysis of your spending
+• `/reminder` - Preview daily reminder message
 • `/help` - This help message
+
+⏰ **Daily Reminders:**
+• Automatic reminder at 7:00 PM CST every day
+• Reminds you to log your daily expenses
+• Never forget to track your spending!
 
 💡 **Pro tip:** Use quick analysis for speed, ask custom questions for detailed insights!
 
@@ -386,6 +412,69 @@ async def handle_category_selection(update: Update, context: ContextTypes.DEFAUL
         logger.error(f"Error saving expense: {e}")
         await query.edit_message_text("❌ Failed to save expense. Please try again.")
 
+async def send_daily_reminder():
+    """Send daily reminder to all users asking if they have expenses to record"""
+    global bot_application, db_client
+
+    try:
+        logger.info("📅 Running daily expense reminder...")
+
+        # Get all users from database
+        users = await db_client.get_all_users()
+
+        if not users:
+            logger.warning("No users found for daily reminder")
+            return
+
+        reminder_message = (
+            "🔔 **Daily Expense Reminder**\n\n"
+            "Hey! It's 7pm CST. Do you have any expenses from today to record?\n\n"
+            "💡 Just type them naturally:\n"
+            "• \"Costco 1500\"\n"
+            "• \"Spent 250 on dinner\"\n"
+            "• \"Uber 120 pesos\"\n\n"
+            "Or reply with 'No' if you have no expenses today. 😊"
+        )
+
+        sent_count = 0
+        for user in users:
+            try:
+                telegram_id = user.get('telegram_id')
+                if telegram_id:
+                    await bot_application.bot.send_message(
+                        chat_id=telegram_id,
+                        text=reminder_message,
+                        parse_mode='Markdown'
+                    )
+                    sent_count += 1
+                    await asyncio.sleep(0.1)  # Small delay to avoid rate limits
+            except Exception as user_error:
+                logger.error(f"Failed to send reminder to user {telegram_id}: {user_error}")
+                continue
+
+        logger.info(f"✅ Daily reminder sent to {sent_count} users")
+
+    except Exception as e:
+        logger.error(f"Error in daily reminder: {e}", exc_info=True)
+
+def start_reminder_scheduler():
+    """Start the scheduler for daily reminders"""
+    global scheduler
+
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone('America/Chicago'))
+
+    # Schedule for 7:00 PM CST every day
+    scheduler.add_job(
+        send_daily_reminder,
+        trigger=CronTrigger(hour=19, minute=0, timezone=pytz.timezone('America/Chicago')),
+        id='daily_expense_reminder',
+        name='Daily Expense Reminder at 7pm CST',
+        replace_existing=True
+    )
+
+    scheduler.start()
+    logger.info("⏰ Daily reminder scheduler started (7:00 PM CST)")
+
 def main():
     """Run the hybrid AI-powered bot"""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -400,22 +489,32 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("quick", quick_analysis_command))
     app.add_handler(CommandHandler("insights", insights_command))
+    app.add_handler(CommandHandler("reminder", reminder_command))
     app.add_handler(CallbackQueryHandler(handle_category_selection, pattern=r'^cat:'))
     app.add_handler(CallbackQueryHandler(handle_quick_analysis_callback, pattern=r'^(quick:|custom_query|cancel)'))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     
     async def start_bot():
+        global bot_application
+
         await initialize_components()
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
-        
+
+        # Save app reference for scheduler
+        bot_application = app
+
+        # Start daily reminder scheduler
+        start_reminder_scheduler()
+
         logger.info("🚀 FinAIssistant LangChain Bot started!")
         logger.info("🔧 LangChain tools and agent executor ready")
         logger.info("🧠 AI-powered decision making between expense parsing and queries")
         logger.info("🤖 Powered by OpenAI GPT-3.5-turbo with function calling")
         logger.info("💬 Natural language expense tracking enabled")
         logger.info("✅ Database connected with 18+ categories")
+        logger.info("⏰ Daily reminders enabled (7:00 PM CST)")
         logger.info("📱 Ready to chat on Telegram!")
         
         try:
