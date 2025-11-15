@@ -1,9 +1,11 @@
 """
-Expense text parser - port of the JavaScript parsing logic
-Handles various expense input formats
+Expense text parser - hybrid regex + AI-powered parsing
+Handles various expense input formats dynamically
 """
 import re
+import os
 from typing import Dict, Optional
+from openai import OpenAI
 
 class ExpenseParser:
     def __init__(self):
@@ -14,105 +16,207 @@ class ExpenseParser:
             '£': 'GBP',
             '¥': 'JPY',
         }
-    
+        # Initialize OpenAI client for AI-powered parsing fallback
+        self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY')) if os.getenv('OPENAI_API_KEY') else None
+
     def parse_expense_text(self, text: str) -> Optional[Dict]:
         """
-        Parse expense text into components
-        Supports formats like:
-        - "Costco 120.54"
-        - "120.54 supermarket"
-        - "$57.74 supermarket"
-        - "57.74 CAD supermarket"
+        Parse expense text into components using AI-first approach
+        Falls back to simple regex only for obvious patterns
         """
         if not text or not isinstance(text, str):
             return None
-            
+
         text = text.strip()
         if not text:
             return None
-        
-        # Pattern A: merchant first → "Costco 120.54 [CAD]"
-        pattern_a = r'^([^\d]+?)\s+(\$?\d[\d\.,]*)\s*([A-Za-z]{3})?$'
-        match_a = re.match(pattern_a, text, re.IGNORECASE)
-        
-        if match_a:
-            merchant = match_a.group(1).strip()
-            amount_str = match_a.group(2)
-            currency = match_a.group(3)
-            
+
+        # Quick regex check ONLY for super obvious patterns like "Costco 120"
+        # Pattern: merchant + number (most basic case)
+        simple_pattern = r'^([a-zA-Z][a-zA-Z\s]{1,30})\s+(\d+(?:\.\d{1,2})?)$'
+        simple_match = re.match(simple_pattern, text, re.IGNORECASE)
+
+        if simple_match:
+            merchant = simple_match.group(1).strip()
+            amount_str = simple_match.group(2)
             amount = self._parse_amount(amount_str)
-            if amount is None:
-                return None
-                
-            return {
-                'merchant': merchant,
-                'amount': amount,
-                'currency': currency or self._extract_currency_from_amount(amount_str) or 'MXN'
-            }
-        
-        # Pattern B: amount first → "120.54 supermarket" or "$57.74 supermarket" or "57.74 CAD supermarket"
-        pattern_b = r'^(\$?\d+[\d\.,]*)\s*(?:([A-Za-z]{3})\s+)?(.+)$'
-        match_b = re.match(pattern_b, text, re.IGNORECASE)
-        
-        if match_b:
-            amount_str = match_b.group(1)
-            currency = match_b.group(2)
-            merchant = match_b.group(3).strip()
-            
-            amount = self._parse_amount(amount_str)
-            if amount is None:
-                return None
-                
-            if not merchant:
-                return None
-                
-            return {
-                'merchant': merchant,
-                'amount': amount,
-                'currency': currency or self._extract_currency_from_amount(amount_str) or 'MXN'
-            }
-        
-        return None
-    
+
+            if amount and merchant:
+                return {
+                    'merchant': merchant,
+                    'amount': amount,
+                    'currency': 'MXN'
+                }
+
+        # Everything else goes to AI - this is the PRIMARY parser now
+        # This handles:
+        # - "And Marissa 155 under restaurants"
+        # - "Spent 155 under restaurants, description is Marissa"
+        # - "155 for lunch yesterday"
+        # - ANY natural language format
+        return self._parse_with_ai(text)
+
     def _parse_amount(self, amount_str: str) -> Optional[float]:
         """Parse amount string to float"""
         if not amount_str:
             return None
-            
+
         try:
             # Remove currency symbols and normalize
             cleaned = amount_str.replace('$', '').replace(',', '.')
             amount = float(cleaned)
-            
+
             # Reasonable bounds check
             if 0 < amount < 1000000:
                 return amount
         except (ValueError, TypeError):
             pass
-            
+
         return None
-    
+
     def _extract_currency_from_amount(self, amount_str: str) -> Optional[str]:
         """Extract currency from amount string based on symbols"""
         if not amount_str:
             return None
-            
+
         for symbol, currency in self.currency_symbols.items():
             if symbol in amount_str:
                 return currency
-                
+
         return None
-    
+
+    def _parse_with_ai(self, text: str) -> Optional[Dict]:
+        """
+        AI-powered expense parsing using OpenAI
+        Handles ANY natural language format conversationally
+        """
+        if not self.openai_client:
+            return None
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "system",
+                    "content": """You are an expense parser. Extract expense information from natural language text, handling conversational input intelligently.
+
+Output JSON format:
+{
+  "merchant": "category or merchant name",
+  "detail": "description/concept/notes (optional)",
+  "amount": numeric value,
+  "currency": "MXN" (default) or "CAD", "USD", etc.,
+  "category": "explicit category if user specified one (optional)"
+}
+
+CRITICAL PARSING RULES:
+1. **AMOUNT**: Always extract the numeric value (required)
+2. **CATEGORY DETECTION**: Look for explicit category mentions:
+   - "under [category]" → e.g., "under restaurants", "under other", "under Others"
+   - "on [category]" → e.g., "spent on restaurants", "on category others"
+   - "in [category]" → e.g., "in gas categories", "in groceries"
+   - "category [name]" → e.g., "category others", "category restaurants"
+   - "[category]" at end → e.g., "155 restaurants", "60 groceries"
+3. **FIELD EXTRACTION**:
+   - "merchant": Use the explicit CATEGORY if mentioned (restaurants, others, groceries, etc.), OR the store name if no category specified
+   - "category": Extract the explicit category name if the user specified one (this helps skip classification)
+   - "detail": Any description, concept, person name, notes, or the actual merchant/place name
+4. **COMMON CATEGORIES**: restaurants, groceries, gas, transportation, clothing, entertainment, oxxo, medicines, puppies, telcom, subscriptions, travel, gadgets, home appliances, others, finance, gym, canada, rent
+5. **CONVERSATIONAL HANDLING**:
+   - "spent", "pasted", "paid", "cost" are expense indicators, NOT questions
+   - Only return {"error": "not_an_expense"} for confirmations ("yes", "ok") or clear questions ("what is...", "how much...")
+
+EXAMPLES - CATEGORY EXPLICITLY MENTIONED:
+- "Spent 155 under restaurants, description is Marissa" → {"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}
+- "And Marissa 155 under restaurants" → {"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}
+- "i spent on other 150 concept pelotas pádel" → {"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}
+- "i spent on category others 150 concept pelotas pádel" → {"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}
+- "add 971 in gas categories" → {"merchant": "gas", "category": "gas", "detail": null, "amount": 971, "currency": "MXN"}
+- "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "category": "restaurants", "detail": "Pan de muerto marisa", "amount": 60, "currency": "MXN"}
+- "Costco 120 groceries" → {"merchant": "groceries", "category": "groceries", "detail": "Costco", "amount": 120, "currency": "MXN"}
+
+EXAMPLES - NO CATEGORY (WILL BE CLASSIFIED LATER):
+- "Costco 120" → {"merchant": "Costco", "detail": null, "amount": 120, "currency": "MXN"}
+- "I paid 50 bucks for lunch today" → {"merchant": "lunch", "detail": null, "amount": 50, "currency": "MXN"}
+- "compré café por 45 pesos" → {"merchant": "café", "detail": null, "amount": 45, "currency": "MXN"}
+- "Marissa 155" → {"merchant": "Marissa", "detail": null, "amount": 155, "currency": "MXN"}
+
+EXAMPLES - NOT EXPENSES:
+- "what's my total spending?" → {"error": "not_an_expense"}
+- "yes please" → {"error": "not_an_expense"}
+- "ok" → {"error": "not_an_expense"}
+- "Others" (just the word) → {"error": "not_an_expense"}"""
+                }, {
+                    "role": "user",
+                    "content": text
+                }],
+                temperature=0.1,
+                max_tokens=100,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            result = json.loads(response.choices[0].message.content)
+
+            # Check if it's an error
+            if "error" in result:
+                return None
+
+            # Validate required fields
+            if "merchant" not in result or "amount" not in result:
+                return None
+
+            # Ensure amount is a number
+            try:
+                amount = float(result["amount"])
+                if not (0 < amount < 1000000):
+                    return None
+            except (ValueError, TypeError):
+                return None
+
+            # Extract detail if present
+            detail = result.get("detail")
+            if detail and detail != "null":
+                detail = str(detail).strip()
+            else:
+                detail = None
+
+            # Extract explicit category if user specified one
+            category = result.get("category")
+            if category and category != "null":
+                category = str(category).strip()
+            else:
+                category = None
+
+            parsed_result = {
+                "merchant": str(result["merchant"]).strip(),
+                "detail": detail,
+                "amount": amount,
+                "currency": result.get("currency", "MXN")
+            }
+
+            # Include category if explicitly mentioned by user
+            if category:
+                parsed_result["category"] = category
+
+            return parsed_result
+
+        except Exception as e:
+            # If AI parsing fails, return None to avoid breaking the bot
+            import logging
+            logging.debug(f"AI parsing failed: {e}")
+            return None
+
     def validate_expense_data(self, data: Dict) -> bool:
         """Validate parsed expense data"""
         if not isinstance(data, dict):
             return False
-            
+
         required_fields = ['merchant', 'amount']
         for field in required_fields:
             if field not in data or not data[field]:
                 return False
-        
+
         # Check amount is valid number
         try:
             amount = float(data['amount'])
@@ -120,10 +224,10 @@ class ExpenseParser:
                 return False
         except (ValueError, TypeError):
             return False
-        
+
         # Check merchant is non-empty string
         merchant = data.get('merchant', '').strip()
         if not merchant or len(merchant) < 1:
             return False
-            
+
         return True

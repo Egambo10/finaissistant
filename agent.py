@@ -22,6 +22,7 @@ class ParseExpenseInput(BaseModel):
 
 class ClassifyExpenseInput(BaseModel):
     merchant: str = Field(description="Merchant name to classify")
+    explicit_category: Optional[str] = Field(default=None, description="Optional explicit category name if user specified one (e.g., 'restaurants', 'others')")
 
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
@@ -55,27 +56,40 @@ class ParseExpenseTool(BaseTool):
     def _run(self, text: str) -> str:
         # Enhanced logic to avoid parsing questions as expenses
         text_lower = text.lower().strip()
-        
+
         # Check if this looks like a question rather than an expense
+        # IMPORTANT: Only reject if it's CLEARLY a question, not just mentioning spending
+        # Removed 'spent', 'expenses' from indicators as they're commonly used in expense entries
         question_indicators = [
-            'give me', 'show me', 'tell me', 'what', 'how', 'when', 'where', 'why',
-            'spending', 'spends', 'spent', 'expenses', 'total', 'breakdown', 'analysis',
-            'compare', 'comparison', 'categories', 'category', 'summary', 'report'
+            'give me', 'show me', 'tell me', 'what is', 'what are', 'what was', 'what were',
+            'how much', 'how many', 'when did', 'where did', 'why did',
+            'total', 'breakdown', 'analysis', 'compare', 'comparison', 'summary', 'report',
+            'list all', 'list my', 'list the', 'show all', 'show my', 'show the'
         ]
-        
-        if any(indicator in text_lower for indicator in question_indicators):
-            # This looks like a question, return null to indicate no expense parsing
+
+        # Only reject if it matches a clear question pattern
+        # Check for question words at the start or combined with specific patterns
+        is_question = False
+        for indicator in question_indicators:
+            if indicator in text_lower:
+                # Additional check: make sure it's not just "spent" with amount
+                # e.g., "spent 155" is an expense, but "what did I spend" is a question
+                if indicator in ['give me', 'show me', 'tell me', 'what', 'how', 'list', 'breakdown']:
+                    is_question = True
+                    break
+
+        if is_question:
             return json.dumps(None)
-        
+
         # Check for year patterns that suggest analysis (like "july 2025")
         if re.search(r'\\b(20\\d{2})\\b', text_lower):
             return json.dumps(None)
-        
+
         # Check for month names followed by years (common in questions)
         month_year_pattern = r'\\b(january|february|march|april|may|june|july|august|september|october|november|december)\\s+(20\\d{2})\\b'
         if re.search(month_year_pattern, text_lower):
             return json.dumps(None)
-        
+
         # Only parse if it really looks like an expense entry
         result = self.parser.parse_expense_text(text)
         
@@ -87,26 +101,28 @@ class ParseExpenseTool(BaseTool):
 
 class ClassifyExpenseTool(BaseTool):
     name: str = "classify_expense"
-    description: str = "Classify a merchant/description into one of the known categories by name."
+    description: str = """Classify a merchant/description into one of the known categories.
+    If the user explicitly mentioned a category (from parse_expense's 'category' field), pass it as explicit_category parameter.
+    This will use the user-specified category directly instead of fuzzy matching."""
     args_schema: Type[BaseModel] = ClassifyExpenseInput
     db_client: Any = None
     classifier: Any = None
-    
+
     def __init__(self, db_client, classifier, **kwargs):
         super().__init__(**kwargs)
         object.__setattr__(self, 'db_client', db_client)
         object.__setattr__(self, 'classifier', classifier)
-    
-    async def _arun(self, merchant: str) -> str:
+
+    async def _arun(self, merchant: str, explicit_category: Optional[str] = None) -> str:
         categories = await self.db_client.get_categories()
-        result = await self.classifier.classify_expense(merchant, categories)
+        result = await self.classifier.classify_expense(merchant, categories, explicit_category)
         return json.dumps({
             "categoryName": result.get('category_name'),
             "categoryId": result.get('category_id'),
             "confidence": result.get('confidence', 0.0)
         })
-    
-    def _run(self, merchant: str) -> str:
+
+    def _run(self, merchant: str, explicit_category: Optional[str] = None) -> str:
         # Sync version for compatibility
         import asyncio
         try:
@@ -114,7 +130,7 @@ class ClassifyExpenseTool(BaseTool):
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._arun(merchant))
+        return loop.run_until_complete(self._arun(merchant, explicit_category))
 
 class InsertExpenseTool(BaseTool):
     name: str = "insert_expense"
@@ -861,22 +877,44 @@ class FinAIAgent:
 **Purpose**: Parse natural language text to extract expense information
 **Use when**: User provides text that might contain expense data
 **Input**: text (string)
-**Output**: JSON with merchant, amount, currency, or null if not an expense
-**Examples**: "Costco 120.54" → {{"merchant": "Costco", "amount": 120.54, "currency": "MXN"}}
+**Output**: JSON with:
+  - merchant: category or merchant name
+  - detail: description/notes (optional)
+  - amount: numeric value
+  - currency: currency code
+  - category: explicit category if user mentioned one (optional)
+  - Returns null if not an expense
+**Examples**:
+- "Spent 155 under restaurants, description is Marissa" → {{"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}}
+- "i spent on category others 150 concept pelotas pádel" → {{"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}}
+- "Costco 120" → {{"merchant": "Costco", "detail": null, "amount": 120, "currency": "MXN"}}
 
-## 🔧 TOOL 2: classify_expense  
+## 🔧 TOOL 2: classify_expense
 **Purpose**: Automatically categorize expenses using AI classification
 **Use when**: You have a merchant name that needs categorization
-**Input**: merchant (string)
+**Input**:
+  - merchant (string): The merchant/store name to classify
+  - explicit_category (optional string): Pass the 'category' field from parse_expense if present
 **Output**: JSON with categoryName, categoryId, confidence score
 **Categories Available**: """ + categories_list + """
+**IMPORTANT**: If parse_expense returned a 'category' field, ALWAYS pass it as explicit_category parameter!
 
 ## 🔧 TOOL 3: insert_expense
 **Purpose**: Save expense to database with proper user attribution
 **Use when**: You have parsed and classified an expense successfully
 **Input**: user_id, category_id, merchant, amount, currency
 **Output**: Confirmation message or error
-**Note**: Handles UUID conversion automatically for user_id and category_id
+**CRITICAL WORKFLOW - TWO PATHS**:
+
+**PATH A: User explicitly specified category** (e.g., "spent 155 under restaurants"):
+1. parse_expense returns: merchant="restaurants", category="restaurants", detail="...", amount=155
+2. classify_expense(merchant="restaurants", explicit_category="restaurants") → returns categoryId with high confidence
+3. insert_expense with categoryId from step 2
+
+**PATH B: No category specified** (e.g., "Costco 120"):
+1. parse_expense returns: merchant="Costco", amount=120 (no category field)
+2. classify_expense(merchant="Costco") → AI classifies it (likely "Groceries")
+3. If confidence > 0.7, insert directly; if < 0.7, ask user for confirmation
 
 ## 🔧 TOOL 4: convert_currency
 **Purpose**: Convert between different currencies using live rates
@@ -924,9 +962,15 @@ class FinAIAgent:
 - Be warm, friendly, conversational like chatting with a human
 
 **Expense Entry** → Use parse_expense → classify_expense → insert_expense
-- "Costco 120.54", "Spent 45 on dinner", "Uber 25 dollars"
-- Any text with merchant + amount pattern
-- NOT questions about spending (those are analytics)
+- Natural language: "Spent 155 under restaurants, description is Marissa"
+- Conversational: "i spent on other 150 concept pelotas pádel"
+- Category specified: "i spent on category others 150 concept pelotas pádel"
+- Simple format: "Costco 120.54", "Uber 25 dollars"
+- **IMPORTANT HANDLING**:
+  - If user specified a category explicitly, use it directly (high confidence path)
+  - If classification confidence is high (>0.7), save immediately
+  - If confidence is low (<0.7), ask user which category
+  - DON'T reject expenses just because they say "spent" - that's normal language!
 
 **Analytics/Questions** → Use sql_query with intelligent routing
 - Questions about spending, budgets, categories, totals, breakdowns
@@ -985,14 +1029,17 @@ class FinAIAgent:
 - Timezone: America/Vancouver
 
 # PERSONALITY & TONE
-- Conversational and friendly like talking to a smart friend
-- Use appropriate emojis but don't overdo it  
-- Be concise for Telegram but helpful and clear
-- When unsure, ask clarifying questions
-- Celebrate successes ("Great! Expense saved!") 
-- Be empathetic about budget concerns
+- **Conversational NLP**: Understand natural language, not rigid commands
+  - Accept "spent", "paid", "cost", "on category", "under", "in" - all valid ways to express expenses
+  - Handle typos, variations, Spanish/English mixing gracefully
+- **Context-aware**: Remember previous messages, handle follow-ups naturally
+- **Friendly but efficient**: Use emojis appropriately, be warm but concise for Telegram
+- **Ask when needed**: If category is unclear AND not explicitly stated, ask the user
+- **Celebrate successes**: "Great! Expense saved!" when things work well
+- **Empathetic**: Be understanding about budget concerns and spending patterns
 
-Remember: You're not just parsing commands - you're having natural conversations about money management with families. Be helpful, intelligent, and personable."""
+# REMEMBER
+You're not a rigid command parser - you're a conversational AI assistant. Users should be able to tell you about expenses naturally, like talking to a friend who's tracking their money. Accept varied phrasings, understand context, and make intelligent decisions about when to ask for clarification vs. proceeding confidently."""
             ),
             MessagesPlaceholder("chat_history"),
             ("human", "{input}"),

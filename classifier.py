@@ -113,9 +113,13 @@ class ExpenseClassifier:
         
         return 0.0
     
-    async def classify_expense(self, merchant: str, categories: List[Dict]) -> Dict:
+    async def classify_expense(self, merchant: str, categories: List[Dict], explicit_category: str = None) -> Dict:
         """
         Classify an expense by merchant name
+        Args:
+            merchant: The merchant/store name to classify
+            categories: List of available categories from database
+            explicit_category: Optional explicit category name provided by user
         Returns: {
             'category_name': str,
             'category_id': int,
@@ -125,9 +129,41 @@ class ExpenseClassifier:
         """
         if not merchant:
             return {'category_name': None, 'category_id': None, 'confidence': 0.0, 'suggestions': []}
-        
+
+        # If user explicitly specified a category, use it directly
+        if explicit_category:
+            normalized_category = self.normalize_text(explicit_category)
+            # Try to find exact or close match in available categories
+            for cat in categories:
+                normalized_cat_name = self.normalize_text(cat['name'])
+                # Exact match or very close match
+                if normalized_cat_name == normalized_category or normalized_category in normalized_cat_name:
+                    return {
+                        'category_name': cat['name'],
+                        'category_id': cat['id'],
+                        'confidence': 2.0,  # High confidence - user specified it!
+                        'suggestions': []
+                    }
+
+            # If no exact match, try fuzzy matching on category names
+            best_match = None
+            best_score = 0.0
+            for cat in categories:
+                score = self._score_match(normalized_category, cat['name'])
+                if score > best_score:
+                    best_score = score
+                    best_match = cat
+
+            if best_match and best_score > 0.5:
+                return {
+                    'category_name': best_match['name'],
+                    'category_id': best_match['id'],
+                    'confidence': 1.8,  # High confidence - user specified category
+                    'suggestions': []
+                }
+
         normalized_merchant = self.normalize_text(merchant)
-        
+
         # Score against category rules
         category_scores = {}
         
