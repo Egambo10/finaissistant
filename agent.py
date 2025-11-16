@@ -26,8 +26,8 @@ class ClassifyExpenseInput(BaseModel):
 
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
-    category_id: int = Field(description="Category ID")
-    merchant: str = Field(description="Merchant name")
+    category_id: int = Field(description="Category ID (from classify_expense)")
+    merchant: str = Field(description="EXPENSE DESCRIPTION - Use the 'detail' field from parse_expense if present, otherwise use 'merchant' from parse_expense. This is what will show in the expense_detail column.")
     amount: float = Field(description="Expense amount")
     currency: str = Field(default="MXN", description="Currency code")
 
@@ -902,19 +902,43 @@ class FinAIAgent:
 ## 🔧 TOOL 3: insert_expense
 **Purpose**: Save expense to database with proper user attribution
 **Use when**: You have parsed and classified an expense successfully
-**Input**: user_id, category_id, merchant, amount, currency
+**Input**: user_id, category_id, merchant (THE DESCRIPTION!), amount, currency
 **Output**: Confirmation message or error
-**CRITICAL WORKFLOW - TWO PATHS**:
 
-**PATH A: User explicitly specified category** (e.g., "spent 155 under restaurants"):
-1. parse_expense returns: merchant="restaurants", category="restaurants", detail="...", amount=155
-2. classify_expense(merchant="restaurants", explicit_category="restaurants") → returns categoryId with high confidence
-3. insert_expense with categoryId from step 2
+**CRITICAL PARAMETER MAPPING**:
+- user_id: Extract from [SYSTEM: user_id=XXXXX] in message
+- category_id: The categoryId from classify_expense result
+- merchant: **THE EXPENSE DESCRIPTION** - Use parse_expense's 'detail' field if present, else use 'merchant' field
+- amount: From parse_expense
+- currency: From parse_expense
 
-**PATH B: No category specified** (e.g., "Costco 120"):
-1. parse_expense returns: merchant="Costco", amount=120 (no category field)
-2. classify_expense(merchant="Costco") → AI classifies it (likely "Groceries")
-3. If confidence > 0.7, insert directly; if < 0.7, ask user for confirmation
+**COMPLETE WORKFLOW EXAMPLES**:
+
+**Example 1**: "Spent 155 under restaurants, description is Marissa"
+1. parse_expense("Spent 155...") → {"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155}
+2. classify_expense(merchant="restaurants", explicit_category="restaurants") → {"categoryId": 5, "categoryName": "Restaurants"}
+3. insert_expense(user_id=123, category_id=5, merchant="Marissa", amount=155, currency="MXN")
+   ☑️ Description saved: "Marissa" | Category: "Restaurants"
+
+**Example 2**: "280 clase latina gym"
+1. parse_expense("280 clase...") → {"merchant": "gym", "category": "gym", "detail": "clase latina", "amount": 280}
+2. classify_expense(merchant="gym", explicit_category="gym") → {"categoryId": 17, "categoryName": "Gym"}
+3. insert_expense(user_id=123, category_id=17, merchant="clase latina", amount=280, currency="MXN")
+   ☑️ Description saved: "clase latina" | Category: "Gym"
+
+**Example 3**: "196 Walmart express under groceries"
+1. parse_expense("196 Walmart...") → {"merchant": "groceries", "category": "groceries", "detail": "Walmart express", "amount": 196}
+2. classify_expense(merchant="groceries", explicit_category="groceries") → {"categoryId": 3, "categoryName": "Groceries"}
+3. insert_expense(user_id=123, category_id=3, merchant="Walmart express", amount=196, currency="MXN")
+   ☑️ Description saved: "Walmart express" | Category: "Groceries"
+
+**Example 4**: "Costco 120" (no category specified)
+1. parse_expense("Costco 120") → {"merchant": "Costco", "amount": 120} (no category or detail field)
+2. classify_expense(merchant="Costco") → {"categoryId": 3, "categoryName": "Groceries", "confidence": 0.9}
+3. insert_expense(user_id=123, category_id=3, merchant="Costco", amount=120, currency="MXN")
+   ☑️ Description saved: "Costco" | Category: "Groceries"
+
+**REMEMBER**: The 'merchant' parameter in insert_expense is the DESCRIPTION that shows in the expense table, NOT the category!
 
 ## 🔧 TOOL 4: convert_currency
 **Purpose**: Convert between different currencies using live rates
@@ -1013,9 +1037,10 @@ class FinAIAgent:
 - Years (2024, 2025) = temporal references, not amounts
 
 ✅ **Always validate before inserting expenses**:
-- Parse first, classify second, insert third
+- Parse first, classify second, insert third - CALL EACH TOOL ONLY ONCE PER EXPENSE
 - Check confidence scores, ask for confirmation if needed
 - Handle currency conversion properly
+- **NEVER call insert_expense twice for the same expense** - once it's saved, just confirm to user
 
 ⚡ **SQL Query Intelligence**:
 - Try predefined templates first (faster, more reliable)
