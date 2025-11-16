@@ -111,19 +111,26 @@ Output JSON format:
 
 CRITICAL PARSING RULES:
 1. **AMOUNT**: Always extract the numeric value (required)
-2. **CATEGORY DETECTION**: Look for explicit category mentions:
+2. **CATEGORY DETECTION**: Look for explicit category mentions with various keywords:
    - "under [category]" → e.g., "under restaurants", "under other", "under Others"
    - "on [category]" → e.g., "spent on restaurants", "on category others"
    - "in [category]" → e.g., "in gas categories", "in groceries"
    - "category [name]" → e.g., "category others", "category restaurants"
+   - "en [category]" → e.g., "en restaurantes", "en otros" (Spanish)
    - "[category]" at end → e.g., "155 restaurants", "60 groceries"
-3. **FIELD EXTRACTION**:
+3. **DETAIL/DESCRIPTION KEYWORDS** (extract these as 'detail' field):
+   - "description [text]", "descripción [text]", "descriptible [text]"
+   - "concept [text]", "concepto [text]"
+   - "detail [text]", "detalle [text]"
+   - "for [text]", "para [text]"
+   - Text in quotes: "pelotas pádel", 'clase latina'
+4. **FIELD EXTRACTION**:
    - "merchant": Use the explicit CATEGORY if mentioned (restaurants, others, groceries, etc.), OR the store name if no category specified
    - "category": Extract the explicit category name if the user specified one (this helps skip classification)
-   - "detail": Any description, concept, person name, notes, or the actual merchant/place name
-4. **COMMON CATEGORIES**: restaurants, groceries, gas, transportation, clothing, entertainment, oxxo, medicines, puppies, telcom, subscriptions, travel, gadgets, home appliances, others, finance, gym, canada, rent
-5. **CONVERSATIONAL HANDLING**:
-   - "spent", "pasted", "paid", "cost" are expense indicators, NOT questions
+   - "detail": Any description, concept, person name, notes from keywords above, or the actual merchant/place name
+5. **COMMON CATEGORIES**: restaurants, groceries, gas, transportation, clothing, entertainment, oxxo, medicines, puppies, telcom, subscriptions, travel, gadgets, home appliances, others, finance, gym, canada, rent, beauty
+6. **CONVERSATIONAL HANDLING**:
+   - "spent", "gastado", "paid", "cost" are expense indicators, NOT questions
    - Only return {"error": "not_an_expense"} for confirmations ("yes", "ok") or clear questions ("what is...", "how much...")
 
 EXAMPLES - CATEGORY EXPLICITLY MENTIONED:
@@ -131,9 +138,11 @@ EXAMPLES - CATEGORY EXPLICITLY MENTIONED:
 - "And Marissa 155 under restaurants" → {"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155, "currency": "MXN"}
 - "i spent on other 150 concept pelotas pádel" → {"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}
 - "i spent on category others 150 concept pelotas pádel" → {"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}
+- "i spent on category others 150 descriptible pelotas pádel" → {"merchant": "others", "category": "others", "detail": "pelotas pádel", "amount": 150, "currency": "MXN"}
 - "add 971 in gas categories" → {"merchant": "gas", "category": "gas", "detail": null, "amount": 971, "currency": "MXN"}
 - "Pan de muerto marisa 60 restaurants" → {"merchant": "restaurants", "category": "restaurants", "detail": "Pan de muerto marisa", "amount": 60, "currency": "MXN"}
 - "Costco 120 groceries" → {"merchant": "groceries", "category": "groceries", "detail": "Costco", "amount": 120, "currency": "MXN"}
+- "211 jabón carita under belleza" → {"merchant": "belleza", "category": "belleza", "detail": "jabón carita", "amount": 211, "currency": "MXN"}
 
 EXAMPLES - NO CATEGORY (WILL BE CLASSIFIED LATER):
 - "Costco 120" → {"merchant": "Costco", "detail": null, "amount": 120, "currency": "MXN"}

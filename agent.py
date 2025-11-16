@@ -857,9 +857,8 @@ class FinAIAgent:
             SqlQueryTool(db_client)
         ]
         
-        # Create agent
-        categories_list = "Rent, Transportation, Groceries, Oxxo, Medicines, Puppies, Telcom, Subscriptions, Restaurants, Clothing, Travel, Entertainment, Gadgets, Home appliances, Others, Finance, Gym, Canada"
-        
+        # Create agent - categories are fetched dynamically from database, not hardcoded
+
         prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
@@ -896,7 +895,7 @@ You have 5 tools available:
 - Use when: You have a merchant name that needs categorization
 - Input: merchant (required), explicit_category (pass if parse_expense returned 'category')
 - Returns: categoryName, categoryId, confidence score
-- Available categories: """ + categories_list + """
+- Categories are fetched from the database dynamically (may include: Rent, Transportation, Groceries, Gas, Oxxo, Medicines, Puppies, Telcom, Subscriptions, Restaurants, Clothing, Travel, Entertainment, Gadgets, Home appliances, Others, Finance, Gym, Canada, Beauty, etc.)
 
 **insert_expense** - Saves expense to database
 - Use when: You have classified an expense successfully

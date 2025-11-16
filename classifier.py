@@ -29,65 +29,75 @@ class ExpenseClassifier:
         return normalized
     
     def _build_category_rules(self) -> Dict[str, List[str]]:
-        """Build category matching rules"""
+        """Build category matching rules - sync with database categories"""
         return {
-            'Rent': ['rent', 'lease', 'landlord'],
+            'Rent': ['rent', 'lease', 'landlord', 'renta'],
             'Transportation': [
-                'transport', 'uber', 'lyft', 'taxi', 'bus', 'metro', 
-                'subway', 'compass', 'evo', 'gas', 'fuel', 'parking'
+                'transport', 'uber', 'lyft', 'taxi', 'bus', 'metro',
+                'subway', 'compass', 'evo', 'parking', 'transporte'
+            ],
+            'Gas': [
+                'gas', 'gasolina', 'fuel', 'pemex', 'shell', 'bp'
             ],
             'Groceries': [
-                'grocery', 'groceries', 'supermarket', 'super market', 
-                'superstore', 'super store', 'costco', 'walmart', 't&t', 
-                'no frills', 'real canadian superstore', 'iga'
+                'grocery', 'groceries', 'supermarket', 'super market',
+                'superstore', 'super store', 'costco', 'walmart', 't&t',
+                'no frills', 'real canadian superstore', 'iga', 'super',
+                'supermercado', 'despensa'
             ],
             'Oxxo': [
-                'oxxo', '7 eleven', '7eleven', 'seven eleven', 
-                'convenience store', 'corner store'
+                'oxxo', '7 eleven', '7eleven', 'seven eleven',
+                'convenience store', 'corner store', 'tienda'
             ],
-            'Medicines': ['medicine', 'medicines', 'pharmacy', 'drugstore', 'rx', 'msp'],
+            'Medicines': ['medicine', 'medicines', 'pharmacy', 'drugstore', 'rx', 'msp', 'farmacia', 'medicinas'],
             'Puppies': [
-                'puppy', 'puppies', 'dog', 'dogs', 'vet', 'veterinary', 
-                'pet', 'kenzo', 'romulo'
+                'puppy', 'puppies', 'dog', 'dogs', 'vet', 'veterinary',
+                'pet', 'kenzo', 'romulo', 'perro', 'perros', 'mascota'
             ],
             'Telcom': [
-                'telcom', 'telecom', 'telus', 'cellular', 'cellphone', 
-                'mobile', 'phone plan', 'data plan', 'internet'
+                'telcom', 'telecom', 'telus', 'cellular', 'cellphone',
+                'mobile', 'phone plan', 'data plan', 'internet', 'celular', 'celu'
             ],
             'Subscriptions': [
-                'subscription', 'subscriptions', 'spotify', 'netflix', 
-                'youtube', 'icloud', 'apple care', 'google suite', 
-                'membership amex', 'duolingo'
+                'subscription', 'subscriptions', 'spotify', 'netflix',
+                'youtube', 'icloud', 'apple care', 'google suite',
+                'membership amex', 'duolingo', 'suscripcion', 'suscripciones'
             ],
             'Restaurants': [
-                'restaurant', 'restaurants', 'cafe', 'coffee', 'kebab', 
-                'sushi', 'tacos', 'ice cream', 'pan y te', 'comida'
+                'restaurant', 'restaurants', 'cafe', 'coffee', 'kebab',
+                'sushi', 'tacos', 'ice cream', 'pan y te', 'comida',
+                'restaurante', 'desayuno', 'almuerzo', 'cena', 'breakfast', 'lunch', 'dinner'
             ],
-            'Clothing': ['clothes', 'clothing', 'apparel', 'zara', 'hm', 'uniqlo'],
-            'Travel': ['travel', 'flight', 'airline', 'hotel', 'luggage'],
+            'Clothing': ['clothes', 'clothing', 'apparel', 'zara', 'hm', 'uniqlo', 'ropa'],
+            'Travel': ['travel', 'flight', 'airline', 'hotel', 'luggage', 'viaje', 'vuelo'],
             'Entertainment': [
-                'entertainment', 'movie', 'cinema', 'show', 'concert', 
-                'f1', 'baile', 'clase de baile'
+                'entertainment', 'movie', 'cinema', 'show', 'concert',
+                'f1', 'baile', 'clase de baile', 'entretenimiento', 'cine'
             ],
             'Gadgets': [
-                'gadget', 'gadgets', 'electronics', 'iphone', 'ipad', 
-                'macbook', 'laptop'
+                'gadget', 'gadgets', 'electronics', 'iphone', 'ipad',
+                'macbook', 'laptop', 'electronica'
             ],
             'Home appliances': [
-                'appliance', 'home appliance', 'vacuum', 'mixer', 
-                'pet hair remover'
+                'appliance', 'home appliance', 'vacuum', 'mixer',
+                'pet hair remover', 'electrodomestico', 'aparato'
             ],
-            'Others': ['others', 'misc', 'breka', 'networking'],
+            'Beauty': [
+                'beauty', 'belleza', 'makeup', 'maquillaje', 'cosmetics', 'cosmeticos',
+                'hair', 'pelo', 'salon', 'spa', 'nail', 'uñas', 'skincare',
+                'jabon', 'shampoo', 'perfume'
+            ],
+            'Others': ['others', 'misc', 'breka', 'networking', 'otros', 'otro', 'other', 'varios'],
             'Finance': [
-                'finance', 'bank fee', 'icbc', 'amex membership', 
-                'examen de manejo'
+                'finance', 'bank fee', 'icbc', 'amex membership',
+                'examen de manejo', 'finanzas', 'banco', 'seguro', 'insurance'
             ],
             'Gym': [
-                'gym', 'fitness', 'membership gym', 'clases de baile', 
-                'latina online gym'
+                'gym', 'fitness', 'membership gym', 'clases de baile',
+                'latina online gym', 'gimnasio', 'clase', 'ejercicio', 'deporte'
             ],
             'Canada': [
-                'canada', 'pgwp', 'tcf', 'licencia', 'examen de manejo'
+                'canada', 'pgwp', 'tcf', 'licencia', 'examen de manejo', 'visa', 'immigration'
             ]
         }
     
