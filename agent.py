@@ -1081,7 +1081,7 @@ Remember: You're an intelligent assistant with reasoning capabilities. Think abo
         # Create agent using langgraph prebuilt (langchain 1.0+ API)
         # Extract system message from prompt template
         from langchain_core.messages import SystemMessage
-        system_message_content = prompt.messages[0].prompt.template.format(userId="{userId}")
+        system_message_content = prompt.messages[0].prompt.template
         self.agent_executor = create_react_agent(
             self.llm,
             self.tools,

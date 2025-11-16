@@ -219,6 +219,12 @@ class ExpenseClassifier:
                     best_score = 0.1  # Very low confidence
                     break
 
+            # If "Others" doesn't exist, use first available category as last resort
+            if not category_id and categories:
+                best_category = categories[0]['name']
+                category_id = categories[0]['id']
+                best_score = 0.05  # Extremely low confidence
+
         # Generate suggestions for uncertain matches (< 0.7 confidence)
         # Show ALL available categories so agent can present them to user
         suggestions = []
