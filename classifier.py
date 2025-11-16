@@ -128,13 +128,13 @@ class ExpenseClassifier:
         Classify an expense by merchant name
         Args:
             merchant: The merchant/store name to classify
-            categories: List of available categories from database
+            categories: List of available categories from database (SOURCE OF TRUTH)
             explicit_category: Optional explicit category name provided by user
         Returns: {
             'category_name': str,
             'category_id': int,
             'confidence': float,
-            'suggestions': List[Dict]
+            'suggestions': List[Dict] (all available categories when uncertain)
         }
         """
         if not merchant:
@@ -174,49 +174,54 @@ class ExpenseClassifier:
 
         normalized_merchant = self.normalize_text(merchant)
 
-        # Score against category rules
+        # NEW WORKFLOW: Score database categories FIRST (database is source of truth)
         category_scores = {}
-        
-        for category_name, phrases in self.category_rules.items():
-            max_score = 0.0
-            for phrase in phrases:
-                score = self._score_match(normalized_merchant, phrase)
-                max_score = max(max_score, score)
-            
-            if max_score > 0:
-                category_scores[category_name] = max_score
-        
+
+        for cat in categories:
+            # Score 1: Direct match against category name
+            name_score = self._score_match(normalized_merchant, cat['name'])
+
+            # Score 2: Match against hardcoded rules (supplementary hints only)
+            rule_score = 0.0
+            if cat['name'] in self.category_rules:
+                for phrase in self.category_rules[cat['name']]:
+                    phrase_score = self._score_match(normalized_merchant, phrase)
+                    rule_score = max(rule_score, phrase_score)
+
+            # Combined score: prioritize direct name match, boost with rule hints
+            # If name_score is strong, use it; otherwise combine with rule_score
+            if name_score >= 1.0:
+                total_score = name_score
+            else:
+                total_score = max(name_score, rule_score * 0.9)  # Slightly discount rule-based scores
+
+            if total_score > 0:
+                category_scores[cat['name']] = {
+                    'score': total_score,
+                    'category_id': cat['id']
+                }
+
         # Find best match
         best_category = None
         best_score = 0.0
-        
-        if category_scores:
-            best_category = max(category_scores.keys(), key=lambda k: category_scores[k])
-            best_score = category_scores[best_category]
-        
-        # Check against database categories for exact matches
-        if best_score < 0.6:
-            for cat in categories:
-                cat_score = self._score_match(normalized_merchant, cat['name'])
-                if cat_score > best_score:
-                    best_category = cat['name']
-                    best_score = cat_score
-        
-        # Find category ID
         category_id = None
-        if best_category:
-            category_id = self._find_category_id_by_name(best_category, categories)
-        
-        # Generate suggestions for low confidence matches
+
+        if category_scores:
+            best_category = max(category_scores.keys(), key=lambda k: category_scores[k]['score'])
+            best_score = category_scores[best_category]['score']
+            category_id = category_scores[best_category]['category_id']
+
+        # Generate suggestions for uncertain matches (< 0.7 confidence)
+        # Show ALL available categories so agent can present them to user
         suggestions = []
         if best_score < 0.7:
-            suggestions = self._get_category_suggestions(normalized_merchant, categories)
-        
+            suggestions = self._get_all_categories_as_suggestions(normalized_merchant, categories)
+
         return {
             'category_name': best_category,
             'category_id': category_id,
             'confidence': best_score,
-            'suggestions': suggestions[:6]  # Limit to top 6
+            'suggestions': suggestions  # All categories when uncertain
         }
     
     def _find_category_id_by_name(self, name: str, categories: List[Dict]) -> Optional[int]:
@@ -226,31 +231,35 @@ class ExpenseClassifier:
                 return cat['id']
         return None
     
-    def _get_category_suggestions(self, normalized_merchant: str, categories: List[Dict]) -> List[Dict]:
-        """Get category suggestions for uncertain matches"""
+    def _get_all_categories_as_suggestions(self, normalized_merchant: str, categories: List[Dict]) -> List[Dict]:
+        """
+        Get ALL category suggestions for uncertain matches
+        Returns all available categories scored against the merchant
+        This allows the agent to present all options to the user
+        """
         suggestions = []
-        
+
         # Score all categories
         for cat in categories:
             # Score against category name
             name_score = self._score_match(normalized_merchant, cat['name'])
-            
-            # Score against category rules
+
+            # Score against category rules (supplementary)
             rule_score = 0.0
             if cat['name'] in self.category_rules:
                 for phrase in self.category_rules[cat['name']]:
                     phrase_score = self._score_match(normalized_merchant, phrase)
                     rule_score = max(rule_score, phrase_score)
-            
-            total_score = max(name_score, rule_score)
-            
-            if total_score > 0.1:  # Minimum threshold for suggestions
-                suggestions.append({
-                    'id': cat['id'],
-                    'name': cat['name'],
-                    'score': total_score
-                })
-        
-        # Sort by score, descending
+
+            # Combined score
+            total_score = max(name_score, rule_score * 0.9)
+
+            suggestions.append({
+                'id': cat['id'],
+                'name': cat['name'],
+                'score': total_score
+            })
+
+        # Sort by score, descending (best matches first, but include all)
         suggestions.sort(key=lambda x: x['score'], reverse=True)
         return suggestions

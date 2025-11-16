@@ -898,7 +898,12 @@ You have 5 tools available:
   - IF NO → classify_expense(merchant="...")
 - Example: parse_expense returned {"merchant": "others", "category": "others", "detail": "pelotas", "amount": 150}
   → Call: classify_expense(merchant="others", explicit_category="others")
-- Returns: categoryName, categoryId, confidence score
+- Returns: categoryName, categoryId, confidence score, **suggestions** (when confidence < 0.7)
+- **IMPORTANT - LOW CONFIDENCE HANDLING:**
+  - If confidence < 0.7, the tool returns a 'suggestions' array with ALL available categories
+  - Present these categories to the user and ask them to clarify which one to use
+  - Format: "I'm not sure about the category. Here are the available options: [list categories]. Which one should I use?"
+  - Wait for user response, then use explicit_category with their choice
 - Categories are fetched from the database dynamically (may include: Rent, Transportation, Groceries, Gas, Oxxo, Medicines, Puppies, Telcom, Subscriptions, Restaurants, Clothing, Travel, Entertainment, Gadgets, Home appliances, Others, Finance, Gym, Canada, Beauty, etc.)
 
 **insert_expense** - Saves expense to database
@@ -1018,17 +1023,33 @@ When saving an expense:
      classify_expense(merchant=result['merchant'], explicit_category=result['category'])
    - **ELSE**:
      classify_expense(merchant=result['merchant'])
-4. Call insert_expense with:
+4. **Check classification confidence:**
+   - **IF confidence >= 0.7**: Proceed to step 5
+   - **IF confidence < 0.7**:
+     - classify_expense returned 'suggestions' array with ALL available categories
+     - Present categories to user: "I'm not sure about the category. Here are the available options: [list categories]. Which one should I use?"
+     - **STOP HERE** - wait for user's response
+     - When user responds with category choice, go back to step 3 with explicit_category
+5. Call insert_expense with:
    - category_id = classify_expense result['categoryId']
    - merchant = parse_expense result['detail'] OR result['merchant'] (use detail if present!)
    - amount = parse_expense result['amount']
    - currency = parse_expense result['currency']
 
-**Example:**
+**Example 1 - Explicit category:**
 - Input: "i spent on category others 150 description pelotas pádel"
 - parse_expense → {merchant: "others", category: "others", detail: "pelotas pádel", amount: 150}
-- classify_expense(merchant="others", explicit_category="others") → {categoryId: "UUID", categoryName: "Others"}
+- classify_expense(merchant="others", explicit_category="others") → {categoryId: "UUID", categoryName: "Others", confidence: 2.0}
 - insert_expense(category_id="UUID", merchant="pelotas pádel", amount=150)
+
+**Example 2 - Uncertain classification:**
+- Input: "100 for stuff I bought"
+- parse_expense → {merchant: "stuff", detail: null, amount: 100}
+- classify_expense(merchant="stuff") → {categoryName: "Others", categoryId: "UUID", confidence: 0.3, suggestions: [{name: "Others", id: "..."}, {name: "Groceries", id: "..."}, ...]}
+- Agent asks: "I'm not sure about the category. Available options: Groceries, Restaurants, Transportation, Others, Gas, Beauty, etc. Which category should I use?"
+- User responds: "Others"
+- classify_expense(merchant="stuff", explicit_category="Others") → {categoryId: "UUID", categoryName: "Others", confidence: 2.0}
+- insert_expense(category_id="UUID", merchant="stuff", amount=100)
 
 # KEY INSIGHTS FROM YOUR DATABASE SCHEMA
 
