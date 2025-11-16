@@ -6,7 +6,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 from langchain.tools import BaseTool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -26,7 +26,7 @@ class ClassifyExpenseInput(BaseModel):
 
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
-    category_id: int = Field(description="Category ID (from classify_expense)")
+    category_id: Union[str, int] = Field(description="Category ID - can be UUID string (from classify_expense) or integer index")
     merchant: str = Field(description="[CRITICAL] EXPENSE DESCRIPTION (goes to expense_detail DB column) - Use parse_expense 'detail' field if present, otherwise 'merchant'. Example: '280 clase latina gym' → use 'clase latina', NOT 'gym'!")
     amount: float = Field(description="Expense amount")
     currency: str = Field(default="MXN", description="Currency code")
@@ -149,7 +149,7 @@ class InsertExpenseTool(BaseTool):
         super().__init__(**kwargs)
         object.__setattr__(self, 'db_client', db_client)
     
-    async def _arun(self, user_id: int, category_id: int, merchant: str, amount: float, currency: str = "MXN") -> str:
+    async def _arun(self, user_id: int, category_id: Union[str, int], merchant: str, amount: float, currency: str = "MXN") -> str:
         try:
             # Convert Telegram user_id to internal UUID user_id
             user_data = await self.db_client.get_user_by_telegram_id(int(user_id))
@@ -181,7 +181,7 @@ class InsertExpenseTool(BaseTool):
         except Exception as e:
             raise Exception(f"Database error inserting expense: {str(e)}")
     
-    def _run(self, user_id: int, category_id: int, merchant: str, amount: float, currency: str = "MXN") -> str:
+    def _run(self, user_id: int, category_id: Union[str, int], merchant: str, amount: float, currency: str = "MXN") -> str:
         import asyncio
         try:
             loop = asyncio.get_event_loop()
