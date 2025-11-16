@@ -116,11 +116,18 @@ class ClassifyExpenseTool(BaseTool):
     async def _arun(self, merchant: str, explicit_category: Optional[str] = None) -> str:
         categories = await self.db_client.get_categories()
         result = await self.classifier.classify_expense(merchant, categories, explicit_category)
-        return json.dumps({
+
+        response = {
             "categoryName": result.get('category_name'),
             "categoryId": result.get('category_id'),
             "confidence": result.get('confidence', 0.0)
-        })
+        }
+
+        # Include suggestions if classifier returned them (confidence < 0.7)
+        if result.get('suggestions'):
+            response["suggestions"] = result.get('suggestions')
+
+        return json.dumps(response)
 
     def _run(self, merchant: str, explicit_category: Optional[str] = None) -> str:
         # Sync version for compatibility
