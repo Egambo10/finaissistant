@@ -210,6 +210,14 @@ class ExpenseClassifier:
             best_category = max(category_scores.keys(), key=lambda k: category_scores[k]['score'])
             best_score = category_scores[best_category]['score']
             category_id = category_scores[best_category]['category_id']
+        else:
+            # No matches found at all - fallback to "Others" category
+            for cat in categories:
+                if cat['name'].lower() in ['others', 'otros', 'other']:
+                    best_category = cat['name']
+                    category_id = cat['id']
+                    best_score = 0.1  # Very low confidence
+                    break
 
         # Generate suggestions for uncertain matches (< 0.7 confidence)
         # Show ALL available categories so agent can present them to user

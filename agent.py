@@ -158,18 +158,23 @@ class InsertExpenseTool(BaseTool):
             
             internal_user_id = user_data['id']  # This is the UUID
             
-            # Get all categories to find the UUID for the given category_id (integer)
+            # Get all categories to find the UUID for the given category_id
             categories = await self.db_client.get_categories()
             if not categories:
                 raise Exception("No categories found in database")
-            
-            # Find category by position/index (LangChain agent passes category index as integer)
+
+            # Handle different category_id formats
+            category_uuid = None
             if isinstance(category_id, int) and 0 <= category_id < len(categories):
+                # LangChain agent passed category index as integer
                 category_uuid = categories[category_id]['id']  # This is the UUID
+            elif category_id and isinstance(category_id, str):
+                # category_id is already a UUID string from classifier
+                category_uuid = category_id
             else:
-                # Fallback: treat category_id as already a UUID string
-                category_uuid = str(category_id)
-            
+                # category_id is None or invalid - cannot proceed
+                raise Exception(f"Invalid category_id: {category_id}. Classification may have failed.")
+
             await self.db_client.insert_expense(
                 user_id=internal_user_id,
                 category_id=category_uuid,
