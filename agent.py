@@ -893,7 +893,11 @@ You have 5 tools available:
 
 **classify_expense** - Categorizes a merchant/description
 - Use when: You have a merchant name that needs categorization
-- Input: merchant (required), explicit_category (pass if parse_expense returned 'category')
+- **CRITICAL**: Check if parse_expense returned a 'category' field
+  - IF YES → classify_expense(merchant="...", explicit_category="the category value")
+  - IF NO → classify_expense(merchant="...")
+- Example: parse_expense returned {"merchant": "others", "category": "others", "detail": "pelotas", "amount": 150}
+  → Call: classify_expense(merchant="others", explicit_category="others")
 - Returns: categoryName, categoryId, confidence score
 - Categories are fetched from the database dynamically (may include: Rent, Transportation, Groceries, Gas, Oxxo, Medicines, Puppies, Telcom, Subscriptions, Restaurants, Clothing, Travel, Entertainment, Gadgets, Home appliances, Others, Finance, Gym, Canada, Beauty, etc.)
 
@@ -1003,6 +1007,28 @@ For each message:
 7. **Continue or terminate** → More tools needed? Or ready to respond?
 8. **Generate response** → Confirm action taken or answer question
 9. **Graceful failure** → If blocked, clarify or explain
+
+## CRITICAL EXPENSE WORKFLOW (follow exactly):
+
+When saving an expense:
+1. Call parse_expense(text="user message")
+2. Observe the result - did it include a 'category' field?
+3. Call classify_expense:
+   - **IF parse_expense returned 'category' field**:
+     classify_expense(merchant=result['merchant'], explicit_category=result['category'])
+   - **ELSE**:
+     classify_expense(merchant=result['merchant'])
+4. Call insert_expense with:
+   - category_id = classify_expense result['categoryId']
+   - merchant = parse_expense result['detail'] OR result['merchant'] (use detail if present!)
+   - amount = parse_expense result['amount']
+   - currency = parse_expense result['currency']
+
+**Example:**
+- Input: "i spent on category others 150 description pelotas pádel"
+- parse_expense → {merchant: "others", category: "others", detail: "pelotas pádel", amount: 150}
+- classify_expense(merchant="others", explicit_category="others") → {categoryId: "UUID", categoryName: "Others"}
+- insert_expense(category_id="UUID", merchant="pelotas pádel", amount=150)
 
 # KEY INSIGHTS FROM YOUR DATABASE SCHEMA
 
