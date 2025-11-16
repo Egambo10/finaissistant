@@ -27,7 +27,7 @@ class ClassifyExpenseInput(BaseModel):
 class InsertExpenseInput(BaseModel):
     user_id: int = Field(description="User ID")
     category_id: int = Field(description="Category ID (from classify_expense)")
-    merchant: str = Field(description="EXPENSE DESCRIPTION - Use the 'detail' field from parse_expense if present, otherwise use 'merchant' from parse_expense. This is what will show in the expense_detail column.")
+    merchant: str = Field(description="[CRITICAL] EXPENSE DESCRIPTION (goes to expense_detail DB column) - Use parse_expense 'detail' field if present, otherwise 'merchant'. Example: '280 clase latina gym' → use 'clase latina', NOT 'gym'!")
     amount: float = Field(description="Expense amount")
     currency: str = Field(default="MXN", description="Currency code")
 
@@ -902,13 +902,19 @@ class FinAIAgent:
 ## 🔧 TOOL 3: insert_expense
 **Purpose**: Save expense to database with proper user attribution
 **Use when**: You have parsed and classified an expense successfully
-**Input**: user_id, category_id, merchant (THE DESCRIPTION!), amount, currency
+**Input**: user_id, category_id, merchant, amount, currency
 **Output**: Confirmation message or error
+
+**⚠️ PARAMETER NAME WARNING**:
+The parameter is called "merchant" but it's actually the EXPENSE DESCRIPTION that goes into the expense_detail database column!
+DO NOT put the category name here - that's wrong!
 
 **CRITICAL PARAMETER MAPPING**:
 - user_id: Extract from [SYSTEM: user_id=XXXXX] in message
 - category_id: The categoryId from classify_expense result
-- merchant: **THE EXPENSE DESCRIPTION** - Use parse_expense's 'detail' field if present, else use 'merchant' field
+- merchant: **THE EXPENSE DESCRIPTION** (not the category!) - Use parse_expense's 'detail' field if present, else use 'merchant' field
+  → This becomes the "expense_detail" in the database table
+  → Example: For "280 clase latina gym", use "clase latina" NOT "gym"
 - amount: From parse_expense
 - currency: From parse_expense
 
@@ -918,27 +924,33 @@ class FinAIAgent:
 1. parse_expense("Spent 155...") → {"merchant": "restaurants", "category": "restaurants", "detail": "Marissa", "amount": 155}
 2. classify_expense(merchant="restaurants", explicit_category="restaurants") → {"categoryId": 5, "categoryName": "Restaurants"}
 3. insert_expense(user_id=123, category_id=5, merchant="Marissa", amount=155, currency="MXN")
-   ☑️ Description saved: "Marissa" | Category: "Restaurants"
+   ✅ DB: expense_detail="Marissa" | category="Restaurants" | amount=155
 
 **Example 2**: "280 clase latina gym"
 1. parse_expense("280 clase...") → {"merchant": "gym", "category": "gym", "detail": "clase latina", "amount": 280}
 2. classify_expense(merchant="gym", explicit_category="gym") → {"categoryId": 17, "categoryName": "Gym"}
 3. insert_expense(user_id=123, category_id=17, merchant="clase latina", amount=280, currency="MXN")
-   ☑️ Description saved: "clase latina" | Category: "Gym"
+   ✅ DB: expense_detail="clase latina" | category="Gym" | amount=280
 
 **Example 3**: "196 Walmart express under groceries"
 1. parse_expense("196 Walmart...") → {"merchant": "groceries", "category": "groceries", "detail": "Walmart express", "amount": 196}
 2. classify_expense(merchant="groceries", explicit_category="groceries") → {"categoryId": 3, "categoryName": "Groceries"}
 3. insert_expense(user_id=123, category_id=3, merchant="Walmart express", amount=196, currency="MXN")
-   ☑️ Description saved: "Walmart express" | Category: "Groceries"
+   ✅ DB: expense_detail="Walmart express" | category="Groceries" | amount=196
 
-**Example 4**: "Costco 120" (no category specified)
-1. parse_expense("Costco 120") → {"merchant": "Costco", "amount": 120} (no category or detail field)
+**Example 4**: "434 desayuno Mely"
+1. parse_expense("434 desayuno...") → {"merchant": "desayuno", "detail": "Mely", "amount": 434}
+2. classify_expense(merchant="desayuno") → {"categoryId": 9, "categoryName": "Restaurants", "confidence": 0.8}
+3. insert_expense(user_id=123, category_id=9, merchant="Mely", amount=434, currency="MXN")
+   ✅ DB: expense_detail="Mely" | category="Restaurants" | amount=434
+
+**Example 5**: "Costco 120" (no category, no detail)
+1. parse_expense("Costco 120") → {"merchant": "Costco", "amount": 120}
 2. classify_expense(merchant="Costco") → {"categoryId": 3, "categoryName": "Groceries", "confidence": 0.9}
 3. insert_expense(user_id=123, category_id=3, merchant="Costco", amount=120, currency="MXN")
-   ☑️ Description saved: "Costco" | Category: "Groceries"
+   ✅ DB: expense_detail="Costco" | category="Groceries" | amount=120
 
-**REMEMBER**: The 'merchant' parameter in insert_expense is the DESCRIPTION that shows in the expense table, NOT the category!
+**REMEMBER**: insert_expense "merchant" parameter → database "expense_detail" column (NOT the category!)
 
 ## 🔧 TOOL 4: convert_currency
 **Purpose**: Convert between different currencies using live rates
