@@ -246,17 +246,20 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
         import logging
         logger = logging.getLogger(__name__)
         try:
+            logger.info("🔧 Initializing Vanna AI for SQL generation...")
             vanna = VannaTrainer(
                 api_key=os.getenv('OPENAI_API_KEY')
                 # Uses default model: gpt-4o-mini
             )
             # Train Vanna on database schema and examples
+            logger.info("📚 Training Vanna on database schema...")
             vanna.train_all()
             object.__setattr__(self, 'vanna_trainer', vanna)
-            logger.info("✅ Vanna AI integrated and trained")
+            logger.info("✅ Vanna AI integrated and trained successfully")
         except Exception as e:
-            logger.warning(f"⚠️ Vanna initialization failed, falling back to GPT-4: {e}")
+            logger.warning(f"⚠️ Vanna initialization failed (falling back to GPT-4o-mini): {e}", exc_info=True)
             object.__setattr__(self, 'vanna_trainer', None)
+            logger.info("✅ SQL query tool will use direct GPT-4o-mini generation")
         
         # Predefined safe SQL templates (family expense tracking)
         templates = {
