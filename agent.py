@@ -245,21 +245,30 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
         # Initialize Vanna AI for improved SQL generation
         import logging
         logger = logging.getLogger(__name__)
-        try:
-            logger.info("🔧 Initializing Vanna AI for SQL generation...")
-            vanna = VannaTrainer(
-                api_key=os.getenv('OPENAI_API_KEY')
-                # Uses default model: gpt-4o-mini
-            )
-            # Train Vanna on database schema and examples
-            logger.info("📚 Training Vanna on database schema...")
-            vanna.train_all()
-            object.__setattr__(self, 'vanna_trainer', vanna)
-            logger.info("✅ Vanna AI integrated and trained successfully")
-        except Exception as e:
-            logger.warning(f"⚠️ Vanna initialization failed (falling back to GPT-4o-mini): {e}", exc_info=True)
+
+        # Check if Vanna should be disabled via environment variable
+        disable_vanna = os.getenv('DISABLE_VANNA', 'false').lower() == 'true'
+
+        if disable_vanna:
+            logger.info("⚠️ Vanna AI disabled via DISABLE_VANNA environment variable")
             object.__setattr__(self, 'vanna_trainer', None)
             logger.info("✅ SQL query tool will use direct GPT-4o-mini generation")
+        else:
+            try:
+                logger.info("🔧 Initializing Vanna AI for SQL generation...")
+                vanna = VannaTrainer(
+                    api_key=os.getenv('OPENAI_API_KEY')
+                    # Uses default model: gpt-4o-mini
+                )
+                # Train Vanna on database schema and examples
+                logger.info("📚 Training Vanna on database schema...")
+                vanna.train_all()
+                object.__setattr__(self, 'vanna_trainer', vanna)
+                logger.info("✅ Vanna AI integrated and trained successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ Vanna initialization failed (falling back to GPT-4o-mini): {e}", exc_info=True)
+                object.__setattr__(self, 'vanna_trainer', None)
+                logger.info("✅ SQL query tool will use direct GPT-4o-mini generation")
         
         # Predefined safe SQL templates (family expense tracking)
         templates = {
