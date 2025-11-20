@@ -9,5 +9,5 @@ pydantic>=2.6.4
 dateutils>=0.6.0
 fuzzywuzzy>=0.18.0
 python-levenshtein>=0.25.0
-vanna>=0.7.9
+vanna[openai,chromadb]>=0.7.9
 chromadb>=1.2.0
