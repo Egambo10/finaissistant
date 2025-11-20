@@ -17,33 +17,8 @@ class SupabaseVanna(ChromaDB_VectorStore, OpenAI_Chat):
     Combines ChromaDB vector store with OpenAI for Text-to-SQL
     """
     def __init__(self, config=None):
-        # Configure ChromaDB to use /tmp directory for Railway compatibility
-        if config is None:
-            config = {}
-
-        # Use /tmp directory for ChromaDB persistence (Railway provides this)
-        import tempfile
-        chroma_path = os.path.join(tempfile.gettempdir(), 'chroma_db')
-
-        # Ensure directory exists
-        os.makedirs(chroma_path, exist_ok=True)
-
-        config['path'] = chroma_path
-
-        # Configure ChromaDB client settings for Railway
-        if 'client_settings' not in config:
-            config['client_settings'] = {}
-
-        # Use in-memory mode as fallback if persistence fails
-        config['client_settings']['anonymized_telemetry'] = False
-        config['client_settings']['allow_reset'] = True
-
-        try:
-            ChromaDB_VectorStore.__init__(self, config=config)
-            OpenAI_Chat.__init__(self, config=config)
-        except Exception as e:
-            logger.error(f"ChromaDB initialization failed: {e}", exc_info=True)
-            raise
+        ChromaDB_VectorStore.__init__(self, config=config)
+        OpenAI_Chat.__init__(self, config=config)
 
 
 class VannaTrainer:
