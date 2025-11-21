@@ -140,9 +140,7 @@ async def insights_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error generating insights: {e}")
         await update.message.reply_text("❌ Couldn't generate insights right now. Try again later!")
 
-    except Exception as e:
-        logger.error(f"Error generating insights: {e}")
-        await update.message.reply_text("❌ Couldn't generate insights right now. Try again later!")
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enhanced help with hybrid capabilities"""
     help_text = """🤖 **FinAIssistant Hybrid Help**
 
