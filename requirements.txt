@@ -11,3 +11,4 @@ fuzzywuzzy>=0.18.0
 python-levenshtein>=0.25.0
 vanna>=0.7.9
 chromadb>=1.2.0
+langgraph>=0.0.10
