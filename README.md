@@ -299,6 +299,11 @@ Private project - All rights reserved.
 
 **Status**: ✅ Production Ready  
 **Last Updated**: October 2025  
-**Version**: 2.1 - Vanna AI + Conversation Memory  
-**Deployment**: Railway-ready with persistent storage# Railway deployment ready
+**Version**: 2.2 - Stability Improvements & Dependency Fixes
+**Deployment**: Railway-ready with persistent storage
+
+## 🆕 Recent Updates (v2.2)
+- **Stability**: Fixed critical deployment crashes by pinning `vanna` and adding `langgraph`.
+- **Classification**: Improved expense categorization logic to prioritize database categories.
+- **Bug Fixes**: Resolved initialization errors and prevented duplicate expense entries.
 # Environment variables configured on Railway
