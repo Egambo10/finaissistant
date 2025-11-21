@@ -18,6 +18,9 @@ from classifier import ExpenseClassifier
 from parser import ExpenseParser
 from currency import CurrencyConverter
 from agent import FinAIAgent
+from reminders import DailyReminder
+from datetime import datetime, time, timedelta
+import pytz
 
 # Load environment variables
 env_path = Path(__file__).parent / "api.env"
@@ -416,6 +419,21 @@ def main():
         logger.info("🤖 Powered by OpenAI GPT-3.5-turbo with function calling")
         logger.info("💬 Natural language expense tracking enabled")
         logger.info("✅ Database connected with 18+ categories")
+        
+        # Initialize and schedule daily reminders
+        reminder = DailyReminder(db_client)
+        job_queue = app.job_queue
+        
+        # TEST MODE: Schedule for 30 seconds from now
+        mx_tz = pytz.timezone('America/Mexico_City')
+        
+        # Calculate test time
+        now_mx = datetime.now(mx_tz)
+        
+        # job_queue.run_daily(reminder.send_daily_reminder, time=time(hour=19, minute=0, tzinfo=mx_tz))
+        job_queue.run_once(reminder.send_daily_reminder, when=30)
+        
+        logger.info(f"⏰ TEST MODE: Reminder scheduled for 30 seconds from now")
         logger.info("📱 Ready to chat on Telegram!")
         
         try:
