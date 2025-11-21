@@ -140,7 +140,9 @@ async def insights_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error generating insights: {e}")
         await update.message.reply_text("❌ Couldn't generate insights right now. Try again later!")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    except Exception as e:
+        logger.error(f"Error generating insights: {e}")
+        await update.message.reply_text("❌ Couldn't generate insights right now. Try again later!")
     """Enhanced help with hybrid capabilities"""
     help_text = """🤖 **FinAIssistant Hybrid Help**
 
@@ -424,16 +426,13 @@ def main():
         reminder = DailyReminder(db_client)
         job_queue = app.job_queue
         
-        # TEST MODE: Schedule for 30 seconds from now
+        # Schedule for 7:00 PM Mexico City time
         mx_tz = pytz.timezone('America/Mexico_City')
+        reminder_time = time(hour=19, minute=0, tzinfo=mx_tz)
         
-        # Calculate test time
-        now_mx = datetime.now(mx_tz)
+        job_queue.run_daily(reminder.send_daily_reminder, time=reminder_time)
+        logger.info(f"⏰ Daily reminder scheduled for {reminder_time} (Mexico City time)")
         
-        # job_queue.run_daily(reminder.send_daily_reminder, time=time(hour=19, minute=0, tzinfo=mx_tz))
-        job_queue.run_once(reminder.send_daily_reminder, when=30)
-        
-        logger.info(f"⏰ TEST MODE: Reminder scheduled for 30 seconds from now")
         logger.info("📱 Ready to chat on Telegram!")
         
         try:
