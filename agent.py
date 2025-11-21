@@ -14,15 +14,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, Field
 
-# Import Vanna for improved SQL generation (optional - graceful fallback if not available)
-try:
-    from vanna_trainer import VannaTrainer
-    VANNA_AVAILABLE = True
-except ImportError as e:
-    import logging
-    logging.warning(f"Vanna not available, will use GPT-4o-mini fallback: {e}")
-    VannaTrainer = None
-    VANNA_AVAILABLE = False
+# Import Vanna for improved SQL generation
+from vanna_trainer import VannaTrainer
 
 class ParseExpenseInput(BaseModel):
     text: str = Field(description="Text to parse for expense information")
@@ -253,22 +246,14 @@ Use 'dynamic_sql' for questions that don't match predefined templates. The syste
         import logging
         logger = logging.getLogger(__name__)
 
-        if not VANNA_AVAILABLE or VannaTrainer is None:
-            logger.warning("⚠️ Vanna not available, using GPT-4o-mini fallback for SQL generation")
-            object.__setattr__(self, 'vanna_trainer', None)
-        else:
-            try:
-                vanna = VannaTrainer(
-                    api_key=os.getenv('OPENAI_API_KEY')
-                    # Uses default model: gpt-4o-mini
-                )
-                # Train Vanna on database schema and examples
-                vanna.train_all()
-                object.__setattr__(self, 'vanna_trainer', vanna)
-                logger.info("✅ Vanna AI integrated and trained")
-            except Exception as e:
-                logger.warning(f"⚠️ Vanna initialization failed, falling back to GPT-4o-mini: {e}")
-                object.__setattr__(self, 'vanna_trainer', None)
+        vanna = VannaTrainer(
+            api_key=os.getenv('OPENAI_API_KEY')
+            # Uses default model: gpt-4o-mini
+        )
+        # Train Vanna on database schema and examples
+        vanna.train_all()
+        object.__setattr__(self, 'vanna_trainer', vanna)
+        logger.info("✅ Vanna AI integrated and trained")
         
         # Predefined safe SQL templates (family expense tracking)
         templates = {
