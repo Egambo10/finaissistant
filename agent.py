@@ -94,8 +94,9 @@ class ParseExpenseTool(BaseTool):
         result = self.parser.parse_expense_text(text)
         
         # Additional validation - if parsed amount is suspiciously high (like a year), reject
-        if result and result.get('amount', 0) > 5000:  # Expenses over $5000 are suspicious
-            return json.dumps(None)
+        # REMOVED: Limit of 5000 was too low for MXN. Parser has its own 1M limit.
+        # if result and result.get('amount', 0) > 5000:  # Expenses over $5000 are suspicious
+        #     return json.dumps(None)
             
         return json.dumps(result)
 
