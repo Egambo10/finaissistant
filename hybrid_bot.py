@@ -44,6 +44,59 @@ converter = None
 hybrid_agent = None
 pending_expenses = {}
 
+async def save_pending_expense(chat_id, category_id, update):
+    """Helper to save a pending expense and notify user"""
+    if chat_id not in pending_expenses:
+        return False
+        
+    pending = pending_expenses[chat_id]
+    
+    try:
+        # Get user data
+        user_data = await db_client.get_user_by_telegram_id(int(pending['user_id']))
+        
+        # Save expense
+        await db_client.insert_expense(
+            user_id=user_data['id'],
+            category_id=category_id,
+            merchant=pending['merchant'],
+            amount=pending['amount'],
+            currency=pending['currency']
+        )
+        
+        # Get category name for display
+        categories = await db_client.get_categories()
+        category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Unknown')
+        
+        formatted_amount = converter.format_amount(pending['amount'], pending['currency'])
+        
+        del pending_expenses[chat_id]
+        
+        # Construct success message
+        msg = (
+            f"✅ **Expense saved!**\n\n"
+            f"💳 {pending['merchant']} — {formatted_amount}\n"
+            f"🏷 Category: **{category_name}**\n"
+            f"🤖 *Confirmed by you*"
+        )
+        
+        # If called from callback query (button click)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(msg, parse_mode='Markdown')
+        else:
+            # If called from text message
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error saving expense: {e}")
+        error_msg = "❌ Failed to save expense. Please try again."
+        if update.callback_query:
+            await update.callback_query.edit_message_text(error_msg)
+        else:
+            await update.message.reply_text(error_msg)
+        return False
+
 async def initialize_components():
     """Initialize all components including hybrid AI agent"""
     global db_client, classifier, parser, converter, hybrid_agent
@@ -213,6 +266,30 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif text == '💡 Insights':
         return await insights_command(update, context)
     
+    # Check for pending expense confirmation (handle text replies like "groceries")
+    if chat_id in pending_expenses:
+        # Check for cancellation keywords
+        normalized_text = classifier.normalize_text(text)
+        if normalized_text in ['cancel', 'cancelar', 'no', 'stop']:
+            del pending_expenses[chat_id]
+            await update.message.reply_text("❌ Cancelled.")
+            return
+
+        # Try to match text to a category
+        categories = await db_client.get_categories()
+        match = await classifier.classify_expense(text, categories, explicit_category=text)
+        
+        # If high confidence match (user likely typed a category name)
+        if match['confidence'] > 1.5:
+             await save_pending_expense(chat_id, match['category_id'], update)
+             return
+        
+        # If not a category match, we fall through to normal processing
+        # The user might be ignoring the prompt and asking a new question
+        # But we should probably keep the pending state unless they explicitly cancel
+        # or we could auto-cancel if they start a new expense flow?
+        # For now, let's just let it fall through but keep the pending state
+    
     # Process with LangChain AI agent
     try:
         # LangChain agent will decide which tool to use (with conversation memory)
@@ -358,36 +435,7 @@ async def handle_category_selection(update: Update, context: ContextTypes.DEFAUL
     pending = pending_expenses[chat_id]
     category_id = choice
     
-    try:
-        # Get user data
-        user_data = await db_client.get_user_by_telegram_id(int(pending['user_id']))
-        
-        # Save expense
-        await db_client.insert_expense(
-            user_id=user_data['id'],
-            category_id=category_id,
-            merchant=pending['merchant'],
-            amount=pending['amount'],
-            currency=pending['currency']
-        )
-        
-        # Get category name for display
-        categories = await db_client.get_categories()
-        category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Unknown')
-        
-        formatted_amount = converter.format_amount(pending['amount'], pending['currency'])
-        
-        del pending_expenses[chat_id]
-        await query.edit_message_text(
-            f"✅ **Expense saved!**\n\n"
-            f"💳 {pending['merchant']} — {formatted_amount}\n"
-            f"🏷 Category: **{category_name}**\n"
-            f"🤖 *Confirmed by you*",
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Error saving expense: {e}")
-        await query.edit_message_text("❌ Failed to save expense. Please try again.")
+    await save_pending_expense(chat_id, category_id, update)
 
 def main():
     """Run the hybrid AI-powered bot"""

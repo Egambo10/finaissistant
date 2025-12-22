@@ -112,6 +112,12 @@ class ExpenseClassifier:
         if normalized_merchant == phrase:
             return 2.0
         
+        # Whole word match check
+        # Split merchant into words and check if phrase is one of them
+        merchant_words = normalized_merchant.split()
+        if phrase in merchant_words:
+            return 1.8  # High confidence for whole word match
+        
         # Contains match
         if phrase in normalized_merchant:
             return min(1.5, len(phrase) / max(4, len(normalized_merchant)))
