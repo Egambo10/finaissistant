@@ -170,8 +170,45 @@ class InsertExpenseTool(BaseTool):
                 # LangChain agent passed category index as integer
                 category_uuid = categories[category_id]['id']  # This is the UUID
             elif category_id and isinstance(category_id, str):
-                # category_id is already a UUID string from classifier
-                category_uuid = category_id
+                # Check if it's a valid UUID
+                import uuid
+                try:
+                    uuid.UUID(category_id)
+                    category_uuid = category_id
+                except ValueError:
+                    # Not a valid UUID - check if it's a category name
+                    # Normalize input for comparison
+                    normalized_input = category_id.lower().strip()
+                    
+                    # Try to find matching category by name
+                    found_category = None
+                    for cat in categories:
+                        if cat['name'].lower() == normalized_input:
+                            found_category = cat
+                            break
+                    
+                    if found_category:
+                        category_uuid = found_category['id']
+                    else:
+                        # If "UUID" literal string or unknown category, try to find a default or fail gracefully
+                        if normalized_input == "uuid":
+                            raise Exception("Invalid category_id: 'UUID'. Please provide a valid category name or ID.")
+                        
+                        # Try fuzzy match as fallback
+                        from fuzzywuzzy import fuzz
+                        best_match = None
+                        best_score = 0
+                        
+                        for cat in categories:
+                            score = fuzz.ratio(normalized_input, cat['name'].lower())
+                            if score > 80 and score > best_score:
+                                best_score = score
+                                best_match = cat
+                        
+                        if best_match:
+                            category_uuid = best_match['id']
+                        else:
+                            raise Exception(f"Invalid category_id: '{category_id}'. Could not resolve to a valid category.")
             else:
                 # category_id is None or invalid - cannot proceed
                 raise Exception(f"Invalid category_id: {category_id}. Classification may have failed.")
